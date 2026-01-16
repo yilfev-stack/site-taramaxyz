@@ -955,6 +955,11 @@ class DemartCrawler:
                 
                 iteration += 1
             
+            # Phase 4: Analyze known image patterns (for JS-rendered sites)
+            if self.image_analyzer:
+                logger.info("Analyzing known image patterns...")
+                await self._analyze_known_images()
+            
             # Generate report
             report = self._generate_report(start_time)
             
