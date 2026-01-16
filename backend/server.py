@@ -66,6 +66,12 @@ class YouTubeDownloadRequest(BaseModel):
     format: str = "video"  # video or audio
 
 
+class DirectVideoDownloadRequest(BaseModel):
+    url: str
+    format: str = "video"  # video or audio
+    site: str = "auto"  # auto, youtube, vk, tiktok, etc.
+
+
 # WebSocket
 class ConnectionManager:
     def __init__(self):
