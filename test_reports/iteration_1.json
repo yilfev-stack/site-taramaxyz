@@ -1,0 +1,46 @@
+{
+  "summary": "Completed comprehensive testing of DEMART.COM.TR Web Sitesi Denetim Aracı - all core functionality working perfectly",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend API - All 11 endpoints (100% success rate)",
+    "Dashboard page loading and statistics cards display",
+    "Start crawl button functionality with real-time progress",
+    "WebSocket real-time progress updates",
+    "Issues tab navigation and content loading",
+    "Filter functionality (severity, language, issue type)",
+    "Issue row accordion expansion/collapse",
+    "URLs tab navigation and URL listing",
+    "URL language filtering",
+    "Pagination controls (prev/next buttons)",
+    "CSV and JSON export button presence",
+    "Tab navigation between Dashboard/Issues/URLs",
+    "Real-time crawl completion detection",
+    "Statistics cards updating after crawl completion",
+    "WebSocket connection status indicator",
+    "Progress bar visual updates during crawl",
+    "Crawl stop functionality",
+    "Filter clearing functionality"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100%",
+    "frontend": "100%",
+    "integration": "100%"
+  },
+  "should_call_test_agent_after_fix": "false",
+  "should_main_agent_test_itself": "true"
+}
