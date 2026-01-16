@@ -574,6 +574,31 @@ function App() {
 
       {/* Content */}
       <main className="container mx-auto px-4 py-6">
+        {/* Direct Download Tab */}
+        {activeTab === "direct" && (
+          <div className="space-y-6">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-white mb-2">🚀 Direkt İndir</h2>
+              <p className="text-gray-400">Site taramadan direkt link yapıştırıp indir</p>
+            </div>
+            
+            <DirectVideoDownloader />
+            <DirectImageDownloader />
+            
+            <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+              <h3 className="text-lg font-bold mb-4">📋 Desteklenen Video Siteleri</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
+                {["YouTube", "VK.com", "TikTok", "Twitter/X", "Instagram", "Facebook", "Dailymotion", "Vimeo", "Twitch", "Reddit", "Bilibili", "SoundCloud"].map(site => (
+                  <div key={site} className="bg-gray-700 rounded px-3 py-2 text-center text-gray-300">
+                    {site}
+                  </div>
+                ))}
+              </div>
+              <p className="text-gray-500 text-xs mt-3 text-center">ve 1000+ site daha...</p>
+            </div>
+          </div>
+        )}
+
         {/* Images */}
         {activeTab === "images" && (
           <div className="space-y-4">
