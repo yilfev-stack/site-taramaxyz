@@ -173,8 +173,8 @@ async def start_crawl(request: CrawlStartRequest, background_tasks: BackgroundTa
     if crawler_instance and crawler_instance.is_running:
         return {"success": False, "message": "Tarama zaten devam ediyor"}
     
-    # Reset and create new crawler
-    crawler_instance = DemartCrawler()
+    # Reset and create new crawler with AI image analysis option
+    crawler_instance = DemartCrawler(enable_ai_image_analysis=request.enable_ai_image_analysis)
     crawler_instance.MAX_CONCURRENT = request.max_concurrent
     
     crawl_progress = {
