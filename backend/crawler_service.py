@@ -153,7 +153,7 @@ class DemartCrawler:
         'company', 'customer', 'project', 'quality', 'solution'
     ]
 
-    def __init__(self):
+    def __init__(self, enable_ai_image_analysis: bool = True):
         self.visited_urls: Set[str] = set()
         self.discovered_urls: Set[str] = set()
         self.issues: List[CrawlIssue] = []
@@ -163,6 +163,13 @@ class DemartCrawler:
         self.progress_callback = None
         self.is_running = False
         self.should_stop = False
+        self.enable_ai_image_analysis = enable_ai_image_analysis
+        
+        # AI görsel analizör
+        if HAS_IMAGE_ANALYZER and enable_ai_image_analysis:
+            self.image_analyzer = ImageContentAnalyzer()
+        else:
+            self.image_analyzer = None
         
     def normalize_url(self, url: str) -> str:
         """URL'yi normalize et"""
