@@ -969,6 +969,91 @@ class DemartCrawler:
             await self.session.close()
             self.is_running = False
 
+    async def _analyze_known_images(self):
+        """Bilinen görsel URL pattern'lerini AI ile analiz et"""
+        # Demart sitesinin bilinen görsel dizinleri
+        known_image_patterns = [
+            # Services images
+            f"{self.TARGET_URL}/images/services/project-support.jpg",
+            f"{self.TARGET_URL}/images/services/operations.jpg",
+            f"{self.TARGET_URL}/images/services/regulations.jpg",
+            f"{self.TARGET_URL}/images/services/energy-transition.jpg",
+            # News images
+            f"{self.TARGET_URL}/images/news/news-1.jpg",
+            f"{self.TARGET_URL}/images/news/news-2.jpg",
+            f"{self.TARGET_URL}/images/news/news-3.jpg",
+        ]
+        
+        # Her bir sayfanın içeriğini al
+        page_contexts = {}
+        context_map = {
+            'services/project-support': ('Proje Desteği', 'Mühendislerimiz vana kilitlerinin doğru kurulumunu sağlar'),
+            'services/operations': ('Operasyon ve Bakım', 'Vana operasyonlarını optimize etmek için çözümler'),
+            'services/regulations': ('Yönetmelikler', 'Yasalara uygunluk ve standartlar'),
+            'services/energy-transition': ('Enerji Dönüşümü', 'Yeni nesil enerji altyapısı vana operasyonları'),
+            'news/news-1': ('Tank Dip Tahliye Vanası', 'Rafineride vana operasyonu güvenlik dönüşümü'),
+            'news/news-2': ('Kamyon Yüklemesi', 'Yanlış yükleme sorunları vana çözümleri'),
+            'news/news-3': ('Zincirli Vana Riskleri', 'FlexiDrive uzaktan vana operatörü'),
+        }
+        
+        logger.info(f"Analyzing {len(known_image_patterns)} known images...")
+        
+        for image_url in known_image_patterns:
+            if self.should_stop:
+                break
+            
+            try:
+                # Görsel URL'sinden context belirle
+                for key, (title, content) in context_map.items():
+                    if key in image_url:
+                        page_title = title
+                        page_content = content
+                        break
+                else:
+                    page_title = "Demart Mühendislik"
+                    page_content = "Vana kilitleri, taşınabilir aktüatörler, vana bakım"
+                
+                # Görseli indir
+                image_base64 = await self.image_analyzer.download_image_as_base64(image_url, self.session)
+                
+                if not image_base64:
+                    logger.warning(f"Could not download image: {image_url}")
+                    continue
+                
+                logger.info(f"Analyzing image: {image_url}")
+                
+                # AI analizi
+                result = await self.image_analyzer.analyze_image_relevance(
+                    image_url=image_url,
+                    image_base64=image_base64,
+                    page_title=page_title,
+                    page_content=page_content + " - Sofis Türkiye distribütörü, endüstriyel vana kilitleri, vana bakım hizmetleri",
+                    page_url=f"{self.TARGET_URL}/hizmetler"
+                )
+                
+                if result and not result.is_relevant:
+                    self.issues.append(CrawlIssue(
+                        source_url=f"{self.TARGET_URL}/hizmetler",
+                        source_language="TR",
+                        issue_type=IssueType.IMAGE_CONTENT_MISMATCH.value,
+                        element_text=f"Görsel: {result.image_description}",
+                        target_url=image_url,
+                        http_status=200,
+                        final_url=image_url,
+                        severity=result.severity,
+                        fix_suggestion=f"ALAKASIZ GÖRSEL: {result.mismatch_reason}. Öneri: {result.suggestion}",
+                        element_location="image"
+                    ))
+                    logger.info(f"Found irrelevant image: {image_url} - {result.mismatch_reason}")
+                elif result and result.is_relevant:
+                    logger.info(f"Image is relevant: {image_url}")
+                    
+                # Rate limiting
+                await asyncio.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Error analyzing image {image_url}: {e}")
+
     def _generate_report(self, start_time: str) -> CrawlReport:
         """Rapor oluştur"""
         tr_pages = sum(1 for p in self.pages.values() if p.language == "TR")
