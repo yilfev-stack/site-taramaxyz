@@ -1,6 +1,7 @@
 """
 Demart.com.tr Web Sitesi Denetim Aracı - Crawler Service
 %100 Link, Dil, İçerik Uyumluluk Testi
+AI Görsel-İçerik Uyumluluk Analizi Dahil
 """
 
 import asyncio
@@ -17,12 +18,24 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 import hashlib
 import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Ensure consistent language detection
 DetectorFactory.seed = 0
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# AI görsel analizi için import
+try:
+    from image_analyzer import ImageContentAnalyzer
+    HAS_IMAGE_ANALYZER = True
+except ImportError:
+    HAS_IMAGE_ANALYZER = False
+    logger.warning("Image analyzer not available")
 
 
 class Severity(str, Enum):
