@@ -15,6 +15,9 @@ import aiohttp
 import aiofiles
 import json
 
+# Set Playwright browsers path
+os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/pw-browsers'
+
 # Playwright
 from playwright.async_api import async_playwright, Browser, Page
 
