@@ -310,7 +310,7 @@ const TextCard = ({ text, selected, onToggle }) => (
 function App() {
   const [targetUrl, setTargetUrl] = useState("");
   const [maxPages, setMaxPages] = useState(30);
-  const [activeTab, setActiveTab] = useState("images");
+  const [activeTab, setActiveTab] = useState("direct");
   const [crawlStatus, setCrawlStatus] = useState({ status: "idle", crawled: 0, discovered: 0, images: 0, videos: 0, message: "" });
   const [summary, setSummary] = useState(null);
   const [images, setImages] = useState([]);
