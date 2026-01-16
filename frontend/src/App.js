@@ -149,10 +149,10 @@ const DirectVideoDownloader = ({ onDownloadComplete }) => {
   };
 
   return (
-    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
+    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
       <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-        <span>🎬</span> Direkt Video İndir
-        <span className="text-xs text-gray-500 font-normal">(VK, TikTok, Twitter, Instagram, Facebook...)</span>
+        <span>🎬</span> Video İndir
+        <span className="text-xs text-gray-500 font-normal">(YouTube, VK, TikTok, Twitter, Instagram...)</span>
       </h3>
       
       <div className="flex gap-3 mb-4">
@@ -160,7 +160,7 @@ const DirectVideoDownloader = ({ onDownloadComplete }) => {
           type="text"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="Video URL yapıştır (örn: vk.com/video...)"
+          placeholder="Video URL yapıştır (örn: youtube.com/watch?v=..., vk.com/video...)"
           className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
         />
         <button
@@ -168,7 +168,7 @@ const DirectVideoDownloader = ({ onDownloadComplete }) => {
           disabled={loading || !url}
           className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold"
         >
-          {loading ? "⏳ Kontrol..." : "🔍 Kontrol Et"}
+          {loading ? "⏳" : "🔍"} Kontrol
         </button>
       </div>
 
@@ -199,16 +199,89 @@ const DirectVideoDownloader = ({ onDownloadComplete }) => {
               disabled={downloading}
               className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold"
             >
-              {downloading ? "⏳ İndiriliyor..." : "🎵 Ses İndir (MP3)"}
+              {downloading ? "⏳ İndiriliyor..." : "🎵 MP3 İndir"}
             </button>
           </div>
         </div>
       )}
+    </div>
+  );
+};
 
-      <div className="mt-4 text-xs text-gray-500">
-        <p className="font-semibold mb-1">Desteklenen siteler:</p>
-        <p>YouTube, VK, TikTok, Twitter/X, Instagram, Facebook, Dailymotion, Vimeo, Twitch, Reddit, ve 1000+ site...</p>
+// Direct Image Downloader Component
+const DirectImageDownloader = () => {
+  const [url, setUrl] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [preview, setPreview] = useState(null);
+
+  const downloadImage = async () => {
+    if (!url) {
+      alert("Resim URL'si girin!");
+      return;
+    }
+    setDownloading(true);
+    try {
+      const res = await axios.post(`${API}/download/direct-image?url=${encodeURIComponent(url)}`);
+      if (res.data.success) {
+        window.open(`${API}/download/file-direct/${res.data.filename}`, "_blank");
+        alert(`İndirildi: ${res.data.filename} (${res.data.size_kb.toFixed(1)} KB)`);
+        setPreview(null);
+        setUrl("");
+      } else {
+        alert("İndirme başarısız: " + res.data.message);
+      }
+    } catch (e) {
+      alert("Hata: " + e.message);
+    }
+    setDownloading(false);
+  };
+
+  const previewImage = () => {
+    if (url) setPreview(url);
+  };
+
+  return (
+    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+      <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+        <span>🖼️</span> Resim İndir
+        <span className="text-xs text-gray-500 font-normal">(Herhangi bir resim URL'si)</span>
+      </h3>
+      
+      <div className="flex gap-3 mb-4">
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => { setUrl(e.target.value); setPreview(null); }}
+          placeholder="Resim URL yapıştır (örn: site.com/image.jpg)"
+          className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 outline-none"
+        />
+        <button
+          onClick={previewImage}
+          disabled={!url}
+          className="bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-4 py-3 rounded-lg font-semibold"
+        >
+          👁️ Önizle
+        </button>
+        <button
+          onClick={downloadImage}
+          disabled={downloading || !url}
+          className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold"
+        >
+          {downloading ? "⏳ İndiriliyor..." : "📥 İndir"}
+        </button>
       </div>
+
+      {preview && (
+        <div className="mt-4 p-4 bg-gray-700 rounded-lg">
+          <p className="text-gray-400 text-sm mb-2">Önizleme:</p>
+          <img 
+            src={preview} 
+            alt="Preview" 
+            className="max-w-full max-h-64 rounded-lg mx-auto"
+            onError={(e) => { e.target.src = "https://via.placeholder.com/300x200?text=Yüklenemedi"; }}
+          />
+        </div>
+      )}
     </div>
   );
 };
