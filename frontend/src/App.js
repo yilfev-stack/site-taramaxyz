@@ -550,6 +550,7 @@ function App() {
         <div className="container mx-auto px-4">
           <div className="flex gap-1 overflow-x-auto">
             {[
+              { id: "direct", label: "📥 Direkt İndir", count: null },
               { id: "images", label: "🖼️ Görseller", count: images.length },
               { id: "youtube", label: "▶ YouTube", count: videos.youtube?.length || 0 },
               { id: "videos", label: "🎬 Videolar", count: videos.videos?.length || 0 },
