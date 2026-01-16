@@ -810,6 +810,10 @@ class DemartCrawler:
         for img in page_info.images:
             await self.check_image(url, page_info.language, img)
         
+        # AI Görsel-İçerik Uyumu Analizi
+        if self.image_analyzer and page_info.images:
+            await self.analyze_images_with_ai(page_info)
+        
         # External link checks (sample - not all)
         for ext_link in page_info.external_links[:5]:
             await self.check_external_link(url, page_info.language, ext_link, "")
