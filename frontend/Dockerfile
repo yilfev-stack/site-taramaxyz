@@ -1,6 +1,10 @@
-FROM node:18-alpine
+FROM node:18-alpine as builder
 
 WORKDIR /app
+
+# Accept build arg
+ARG REACT_APP_BACKEND_URL=http://localhost:8001
+ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
 
 # Copy package files
 COPY package.json yarn.lock ./
@@ -8,14 +12,20 @@ COPY package.json yarn.lock ./
 # Install dependencies
 RUN yarn install --frozen-lockfile
 
-# Copy application code
+# Copy source
 COPY . .
 
-# Build the app
+# Build
 RUN yarn build
 
-# Install serve for production
+# Production stage
+FROM node:18-alpine
+
+WORKDIR /app
+
 RUN yarn global add serve
+
+COPY --from=builder /app/build ./build
 
 EXPOSE 3006
 

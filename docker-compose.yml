@@ -3,30 +3,29 @@ version: '3.8'
 services:
   mongodb:
     image: mongo:6.0
-    container_name: website-audit-mongodb
+    container_name: website-scanner-mongodb
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
     networks:
-      - audit-network
+      - scanner-network
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: website-audit-backend
+    container_name: website-scanner-backend
     ports:
       - "8001:8001"
     environment:
       - MONGO_URL=mongodb://mongodb:27017
-      - DB_NAME=website_audit
+      - DB_NAME=website_scanner
       - CORS_ORIGINS=*
-      - EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY:-sk-emergent-89c3861E0F6F6A7D0D}
     depends_on:
       - mongodb
     networks:
-      - audit-network
+      - scanner-network
     volumes:
       - ./downloads:/app/downloads
 
@@ -34,20 +33,19 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: website-audit-frontend
+      args:
+        - REACT_APP_BACKEND_URL=http://localhost:8001
+    container_name: website-scanner-frontend
     ports:
       - "3006:3006"
-    environment:
-      - REACT_APP_BACKEND_URL=http://localhost:8001
-      - PORT=3006
     depends_on:
       - backend
     networks:
-      - audit-network
+      - scanner-network
 
 volumes:
   mongodb_data:
 
 networks:
-  audit-network:
+  scanner-network:
     driver: bridge
