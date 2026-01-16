@@ -546,21 +546,29 @@ function App() {
         {/* YouTube */}
         {activeTab === "youtube" && (
           <div className="space-y-4">
+            {/* Direct Video Downloader */}
+            <DirectVideoDownloader />
+            
             <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-4 mb-4">
-              <p className="text-yellow-400 font-semibold">⚠️ YouTube İndirme</p>
+              <p className="text-yellow-400 font-semibold">⚠️ Video İndirme</p>
               <p className="text-yellow-200 text-sm mt-1">Kişisel kullanım için. Ticari kullanım ve dağıtım yasaktır.</p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {(videos.youtube || []).map((video, i) => (
-                <YouTubeCard key={i} video={video} onDownload={downloadYouTube} downloading={ytDownloading} />
-              ))}
-            </div>
+            {(videos.youtube && videos.youtube.length > 0) && (
+              <>
+                <h3 className="text-lg font-semibold text-gray-300">Sitede Bulunan YouTube Videoları</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {videos.youtube.map((video, i) => (
+                    <YouTubeCard key={i} video={video} onDownload={downloadYouTube} downloading={ytDownloading} />
+                  ))}
+                </div>
+              </>
+            )}
             
             {(!videos.youtube || videos.youtube.length === 0) && (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-4xl mb-4">▶</p>
-                <p>YouTube videosu bulunamadı.</p>
+              <div className="text-center py-8 text-gray-500">
+                <p className="text-2xl mb-2">👆</p>
+                <p>Yukarıdan herhangi bir video URL'si yapıştırarak indirin!</p>
               </div>
             )}
           </div>
