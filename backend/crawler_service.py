@@ -718,6 +718,42 @@ class DemartCrawler:
                     # TR page should have EN alternate
                     pass
 
+    async def analyze_images_with_ai(self, page_info: PageInfo):
+        """AI ile görsel-içerik uyumu analizi yap"""
+        if not self.image_analyzer:
+            return
+        
+        try:
+            logger.info(f"AI analyzing images for: {page_info.url}")
+            
+            results = await self.image_analyzer.analyze_page_images(
+                page_url=page_info.url,
+                page_title=page_info.title,
+                page_content=page_info.content_text,
+                images=page_info.images,
+                session=self.session,
+                max_images=5  # Her sayfada max 5 görsel analiz et
+            )
+            
+            for result in results:
+                if not result.is_relevant:
+                    self.issues.append(CrawlIssue(
+                        source_url=page_info.url,
+                        source_language=page_info.language,
+                        issue_type=IssueType.IMAGE_CONTENT_MISMATCH.value,
+                        element_text=f"Görsel: {result.image_description}",
+                        target_url=result.image_url,
+                        http_status=200,
+                        final_url=result.image_url,
+                        severity=result.severity,
+                        fix_suggestion=f"ALAKASIZ GÖRSEL: {result.mismatch_reason}. Öneri: {result.suggestion}",
+                        element_location="image"
+                    ))
+                    logger.info(f"Found irrelevant image on {page_info.url}: {result.mismatch_reason}")
+                    
+        except Exception as e:
+            logger.error(f"AI image analysis failed for {page_info.url}: {e}")
+
     async def crawl_page(self, url: str) -> Optional[PageInfo]:
         """Tek bir sayfayı crawl et"""
         if self.should_stop:
