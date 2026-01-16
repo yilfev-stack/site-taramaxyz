@@ -432,6 +432,35 @@ class DemartCrawler:
                     'context': self._get_image_context(img)
                 })
         
+        # Also extract images from CSS background-image and other patterns
+        # Check for markdown-style image links in HTML
+        html_content = str(soup)
+        import re
+        
+        # Find image URLs in HTML attributes
+        image_patterns = [
+            r'src=["\']([^"\']*\.(?:jpg|jpeg|png|webp|gif))["\']',
+            r'data-src=["\']([^"\']*\.(?:jpg|jpeg|png|webp|gif))["\']',
+            r'background(?:-image)?:\s*url\(["\']?([^"\'()]*\.(?:jpg|jpeg|png|webp|gif))["\']?\)',
+            r'href=["\']([^"\']*\.(?:jpg|jpeg|png|webp|gif))["\']',
+        ]
+        
+        existing_srcs = {img['src'] for img in page_info.images}
+        
+        for pattern in image_patterns:
+            for match in re.finditer(pattern, html_content, re.IGNORECASE):
+                img_url = match.group(1)
+                if img_url:
+                    full_url = urljoin(url, img_url)
+                    if full_url not in existing_srcs:
+                        page_info.images.append({
+                            'src': full_url,
+                            'alt': '',
+                            'has_alt': False,
+                            'context': 'extracted from HTML'
+                        })
+                        existing_srcs.add(full_url)
+        
         return page_info
 
     def _get_image_context(self, img_tag) -> str:
