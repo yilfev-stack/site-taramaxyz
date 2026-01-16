@@ -330,6 +330,51 @@ async def download_youtube(request: YouTubeDownloadRequest):
         return {"success": False, "message": str(e)}
 
 
+@api_router.post("/download/video")
+async def download_any_video(request: DirectVideoDownloadRequest):
+    """Herhangi bir siteden video indir (VK, TikTok, Twitter, vs.)"""
+    downloader = YouTubeDownloader(str(DOWNLOADS_DIR))
+    
+    try:
+        # Video bilgisi al
+        info = downloader.get_video_info(request.url)
+        if not info:
+            return {"success": False, "message": "Video bilgisi alınamadı. Site desteklenmiyor olabilir."}
+        
+        # İndir
+        if request.format == "audio":
+            filepath = downloader.download_audio(request.url)
+        else:
+            filepath = downloader.download_video(request.url)
+        
+        if filepath and os.path.exists(filepath):
+            filename = os.path.basename(filepath)
+            return {
+                "success": True,
+                "filename": filename,
+                "title": info.get('title', ''),
+                "duration": info.get('duration', 0),
+                "uploader": info.get('uploader', ''),
+                "download_url": f"/api/download/youtube-file/{filename}"
+            }
+        
+        return {"success": False, "message": "İndirme başarısız"}
+        
+    except Exception as e:
+        logger.error(f"Video download error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@api_router.get("/video/info")
+async def get_any_video_info(url: str):
+    """Herhangi bir video URL'sinin bilgisini al"""
+    downloader = YouTubeDownloader()
+    info = downloader.get_video_info(url)
+    if info:
+        return {"success": True, "info": info}
+    return {"success": False, "message": "Video bilgisi alınamadı"}
+
+
 @api_router.get("/download/file/{download_id}")
 async def get_download_file(download_id: str):
     zip_path = DOWNLOADS_DIR / f"{download_id}.zip"
