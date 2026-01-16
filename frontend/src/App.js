@@ -107,6 +107,112 @@ const YouTubeCard = ({ video, onDownload, downloading }) => (
   </div>
 );
 
+// Direct Video Downloader Component
+const DirectVideoDownloader = ({ onDownloadComplete }) => {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [videoInfo, setVideoInfo] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const checkVideo = async () => {
+    if (!url) return;
+    setLoading(true);
+    setVideoInfo(null);
+    try {
+      const res = await axios.get(`${API}/video/info?url=${encodeURIComponent(url)}`);
+      if (res.data.success) {
+        setVideoInfo(res.data.info);
+      } else {
+        alert("Video bulunamadı: " + res.data.message);
+      }
+    } catch (e) {
+      alert("Hata: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const downloadVideo = async (format) => {
+    setDownloading(true);
+    try {
+      const res = await axios.post(`${API}/download/video`, { url, format });
+      if (res.data.success) {
+        window.open(`${API}/download/youtube-file/${res.data.filename}`, "_blank");
+        alert(`İndirildi: ${res.data.title}`);
+        if (onDownloadComplete) onDownloadComplete();
+      } else {
+        alert("İndirme başarısız: " + res.data.message);
+      }
+    } catch (e) {
+      alert("Hata: " + e.message);
+    }
+    setDownloading(false);
+  };
+
+  return (
+    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
+      <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+        <span>🎬</span> Direkt Video İndir
+        <span className="text-xs text-gray-500 font-normal">(VK, TikTok, Twitter, Instagram, Facebook...)</span>
+      </h3>
+      
+      <div className="flex gap-3 mb-4">
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="Video URL yapıştır (örn: vk.com/video...)"
+          className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
+        />
+        <button
+          onClick={checkVideo}
+          disabled={loading || !url}
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold"
+        >
+          {loading ? "⏳ Kontrol..." : "🔍 Kontrol Et"}
+        </button>
+      </div>
+
+      {videoInfo && (
+        <div className="bg-gray-700 rounded-lg p-4">
+          <div className="flex gap-4">
+            {videoInfo.thumbnail && (
+              <img src={videoInfo.thumbnail} alt="" className="w-32 h-20 object-cover rounded" />
+            )}
+            <div className="flex-1">
+              <p className="font-semibold text-white">{videoInfo.title}</p>
+              <p className="text-gray-400 text-sm">{videoInfo.uploader}</p>
+              {videoInfo.duration > 0 && (
+                <p className="text-gray-500 text-xs">Süre: {Math.floor(videoInfo.duration / 60)}:{(videoInfo.duration % 60).toString().padStart(2, '0')}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-3 mt-4">
+            <button
+              onClick={() => downloadVideo("video")}
+              disabled={downloading}
+              className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold"
+            >
+              {downloading ? "⏳ İndiriliyor..." : "📹 Video İndir"}
+            </button>
+            <button
+              onClick={() => downloadVideo("audio")}
+              disabled={downloading}
+              className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold"
+            >
+              {downloading ? "⏳ İndiriliyor..." : "🎵 Ses İndir (MP3)"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 text-xs text-gray-500">
+        <p className="font-semibold mb-1">Desteklenen siteler:</p>
+        <p>YouTube, VK, TikTok, Twitter/X, Instagram, Facebook, Dailymotion, Vimeo, Twitch, Reddit, ve 1000+ site...</p>
+      </div>
+    </div>
+  );
+};
+
 // Text Card
 const TextCard = ({ text, selected, onToggle }) => (
   <div
