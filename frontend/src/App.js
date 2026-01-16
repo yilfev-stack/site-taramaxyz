@@ -43,81 +43,85 @@ const ProgressBar = ({ progress, status }) => {
             status === "completed" ? "bg-green-500" : status === "error" ? "bg-red-500" : "bg-blue-500"
           }`}
           style={{ width: `${Math.min(percentage, 100)}%` }}
-        ></div>
-      </div>
-      <div className="flex justify-between text-xs mt-2 text-gray-500">
-        <span>{progress.crawled} tarandı</span>
-        <span>{progress.images || 0} görsel</span>
-        <span>{progress.videos || 0} video</span>
+        />
       </div>
     </div>
   );
 };
 
-// Image Card with selection
+// Image Card
 const ImageCard = ({ image, selected, onToggle }) => (
   <div
     className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-      selected ? "border-blue-500 ring-2 ring-blue-500" : "border-gray-700 hover:border-gray-500"
+      selected ? "border-green-500 ring-2 ring-green-500" : "border-gray-700 hover:border-gray-500"
     }`}
     onClick={onToggle}
   >
     <img
       src={image.url}
-      alt={image.alt || "Image"}
+      alt={image.title || "Image"}
       className="w-full h-40 object-cover"
-      onError={(e) => { e.target.src = "https://via.placeholder.com/300x200?text=Yüklenemedi"; }}
+      onError={(e) => { e.target.src = "https://via.placeholder.com/300x200?text=X"; }}
     />
     <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all flex items-center justify-center">
-      <span className={`text-white text-2xl ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+      <span className={`text-white text-3xl font-bold ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
         {selected ? "✓" : "+"}
       </span>
     </div>
-    {image.size_kb > 0 && (
-      <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-xs p-1 text-center">
-        {image.size_kb.toFixed(0)} KB
+  </div>
+);
+
+// YouTube Card
+const YouTubeCard = ({ video, onDownload, downloading }) => (
+  <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
+    <div className="relative">
+      <img
+        src={video.thumbnail}
+        alt={video.title}
+        className="w-full h-40 object-cover"
+        onError={(e) => { e.target.src = "https://via.placeholder.com/300x200?text=YouTube"; }}
+      />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-6xl opacity-80">▶</span>
       </div>
-    )}
-  </div>
-);
-
-// Video Card with selection
-const VideoCard = ({ video, selected, onToggle }) => (
-  <div
-    className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-      selected ? "border-blue-500 ring-2 ring-blue-500" : "border-gray-700 hover:border-gray-500"
-    }`}
-    onClick={onToggle}
-  >
-    <div className="w-full h-40 bg-gray-800 flex items-center justify-center">
-      <span className="text-4xl">🎬</span>
     </div>
-    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all flex items-center justify-center">
-      <span className={`text-white text-2xl ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
-        {selected ? "✓" : "+"}
-      </span>
-    </div>
-    <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-xs p-2">
-      <p className="truncate">{video.type.toUpperCase()}</p>
+    <div className="p-3">
+      <p className="text-sm text-gray-300 truncate mb-2">{video.title || video.url}</p>
+      <div className="flex gap-2">
+        <button
+          onClick={() => onDownload(video.url, "video")}
+          disabled={downloading}
+          className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white px-2 py-1.5 rounded text-xs font-semibold"
+        >
+          {downloading ? "⏳" : "📹"} Video
+        </button>
+        <button
+          onClick={() => onDownload(video.url, "audio")}
+          disabled={downloading}
+          className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-2 py-1.5 rounded text-xs font-semibold"
+        >
+          {downloading ? "⏳" : "🎵"} MP3
+        </button>
+      </div>
     </div>
   </div>
 );
 
-// Text Card with selection
+// Text Card
 const TextCard = ({ text, selected, onToggle }) => (
   <div
     className={`p-4 rounded-lg cursor-pointer border-2 transition-all ${
-      selected ? "border-blue-500 bg-blue-900/20" : "border-gray-700 hover:border-gray-500 bg-gray-800"
+      selected ? "border-green-500 bg-green-900/20" : "border-gray-700 hover:border-gray-500 bg-gray-800"
     }`}
     onClick={onToggle}
   >
     <div className="flex items-start gap-3">
-      <span className={`text-xl ${selected ? "text-blue-400" : "text-gray-400"}`}>
+      <span className={`text-xl ${selected ? "text-green-400" : "text-gray-400"}`}>
         {selected ? "✓" : "📝"}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-400 mb-1">{text.type} - {text.word_count} kelime</p>
-        <p className="text-gray-200 text-sm line-clamp-3">{text.content}</p>
+        <p className="text-xs text-gray-500 mb-1">{text.type?.toUpperCase()} • {text.word_count} kelime</p>
+        <p className="text-gray-200 text-sm">{text.content}</p>
       </div>
     </div>
   </div>
@@ -126,173 +130,138 @@ const TextCard = ({ text, selected, onToggle }) => (
 // Main App
 function App() {
   const [targetUrl, setTargetUrl] = useState("");
-  const [maxPages, setMaxPages] = useState(50);
+  const [maxPages, setMaxPages] = useState(30);
   const [activeTab, setActiveTab] = useState("images");
-  const [crawlStatus, setCrawlStatus] = useState({ status: "idle", crawled: 0, discovered: 0, issues: 0, message: "" });
+  const [crawlStatus, setCrawlStatus] = useState({ status: "idle", crawled: 0, discovered: 0, images: 0, videos: 0, message: "" });
   const [summary, setSummary] = useState(null);
   const [images, setImages] = useState([]);
-  const [videos, setVideos] = useState([]);
+  const [videos, setVideos] = useState({ videos: [], youtube: [] });
   const [texts, setTexts] = useState([]);
   const [issues, setIssues] = useState([]);
   const [selectedImages, setSelectedImages] = useState(new Set());
-  const [selectedVideos, setSelectedVideos] = useState(new Set());
   const [selectedTexts, setSelectedTexts] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [ytDownloading, setYtDownloading] = useState(false);
 
-  // Fetch data
+  // Fetch functions
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/crawl/status`);
+      setCrawlStatus(res.data);
+    } catch (e) { console.error(e); }
+  }, []);
+
   const fetchSummary = useCallback(async () => {
     try {
-      const response = await axios.get(`${API}/report/summary`);
-      if (!response.data.error) setSummary(response.data);
+      const res = await axios.get(`${API}/report/summary`);
+      if (!res.data.error) setSummary(res.data);
     } catch (e) { console.error(e); }
   }, []);
 
   const fetchImages = useCallback(async () => {
     try {
-      const response = await axios.get(`${API}/report/images?limit=200`);
-      setImages(response.data.images || []);
+      const res = await axios.get(`${API}/report/images?limit=200`);
+      setImages(res.data.images || []);
     } catch (e) { console.error(e); }
   }, []);
 
   const fetchVideos = useCallback(async () => {
     try {
-      const response = await axios.get(`${API}/report/videos?limit=100`);
-      setVideos(response.data.videos || []);
+      const res = await axios.get(`${API}/report/videos`);
+      setVideos(res.data);
     } catch (e) { console.error(e); }
   }, []);
 
   const fetchTexts = useCallback(async () => {
     try {
-      const response = await axios.get(`${API}/report/texts?limit=100`);
-      setTexts(response.data.texts || []);
+      const res = await axios.get(`${API}/report/texts?limit=100`);
+      setTexts(res.data.texts || []);
     } catch (e) { console.error(e); }
   }, []);
 
   const fetchIssues = useCallback(async () => {
     try {
-      const response = await axios.get(`${API}/report/issues?limit=100`);
-      setIssues(response.data.issues || []);
-    } catch (e) { console.error(e); }
-  }, []);
-
-  const fetchStatus = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API}/crawl/status`);
-      setCrawlStatus(response.data);
+      const res = await axios.get(`${API}/report/issues`);
+      setIssues(res.data.issues || []);
     } catch (e) { console.error(e); }
   }, []);
 
   // Start crawl
   const startCrawl = async () => {
     if (!targetUrl) {
-      alert("Lütfen bir web sitesi URL'si girin!");
+      alert("URL girin!");
       return;
     }
-    
     setLoading(true);
     setSelectedImages(new Set());
-    setSelectedVideos(new Set());
     setSelectedTexts(new Set());
     
     try {
-      let url = targetUrl;
-      if (!url.startsWith("http")) url = "https://" + url;
-      
-      await axios.post(`${API}/crawl/start`, {
-        target_url: url,
-        max_concurrent: 5,
-        max_pages: maxPages,
-        enable_ai_image_analysis: false
-      });
-      setCrawlStatus({ ...crawlStatus, status: "starting", message: "Tarama başlatılıyor..." });
+      await axios.post(`${API}/crawl/start`, { target_url: targetUrl, max_pages: maxPages });
+      setCrawlStatus({ ...crawlStatus, status: "starting", message: "Başlatılıyor..." });
     } catch (e) {
-      console.error(e);
-      alert("Tarama başlatılamadı!");
+      alert("Hata: " + e.message);
     }
     setLoading(false);
   };
 
   // Stop crawl
   const stopCrawl = async () => {
-    try {
-      await axios.post(`${API}/crawl/stop`);
-    } catch (e) { console.error(e); }
+    try { await axios.post(`${API}/crawl/stop`); } catch (e) { console.error(e); }
   };
 
-  // Download selected items
-  const downloadSelected = async (type) => {
-    let urls = [];
-    
-    if (type === "images") {
-      urls = Array.from(selectedImages);
-    } else if (type === "videos") {
-      urls = Array.from(selectedVideos);
-    } else if (type === "all") {
-      urls = [...Array.from(selectedImages), ...Array.from(selectedVideos)];
-    }
-    
-    if (urls.length === 0) {
-      alert("Lütfen indirmek için öğe seçin!");
+  // Download images
+  const downloadImages = async () => {
+    if (selectedImages.size === 0) {
+      alert("Görsel seçin!");
       return;
     }
-    
     setDownloading(true);
-    
     try {
-      const response = await axios.post(`${API}/download/start`, {
-        urls: urls,
-        download_type: type
-      });
-      
-      if (response.data.success) {
-        // Download the zip file
-        window.open(`${API}/download/file/${response.data.download_id}`, "_blank");
-        alert(`${response.data.files_count} dosya indirildi!`);
+      const res = await axios.post(`${API}/download/images`, { urls: Array.from(selectedImages) });
+      if (res.data.success) {
+        window.open(`${API}/download/file/${res.data.download_id}`, "_blank");
+        alert(`${res.data.files_count} dosya indirildi!`);
       } else {
-        alert("İndirme başarısız: " + response.data.message);
+        alert("İndirme başarısız");
       }
     } catch (e) {
-      console.error(e);
-      alert("İndirme hatası!");
+      alert("Hata: " + e.message);
     }
-    
     setDownloading(false);
   };
 
-  // Copy text to clipboard
-  const copySelectedTexts = () => {
-    const selectedTextContents = texts
-      .filter(t => selectedTexts.has(t.content))
-      .map(t => t.content)
-      .join("\n\n---\n\n");
-    
-    navigator.clipboard.writeText(selectedTextContents);
-    alert("Metinler panoya kopyalandı!");
+  // Download YouTube
+  const downloadYouTube = async (url, format) => {
+    setYtDownloading(true);
+    try {
+      const res = await axios.post(`${API}/download/youtube`, { url, format });
+      if (res.data.success) {
+        window.open(`${API}/download/youtube-file/${res.data.filename}`, "_blank");
+        alert(`İndirildi: ${res.data.title}`);
+      } else {
+        alert("İndirme başarısız: " + res.data.message);
+      }
+    } catch (e) {
+      alert("Hata: " + e.message);
+    }
+    setYtDownloading(false);
   };
 
-  // Select all / none
+  // Copy texts
+  const copyTexts = () => {
+    const content = texts.filter(t => selectedTexts.has(t.content)).map(t => t.content).join("\n\n---\n\n");
+    navigator.clipboard.writeText(content);
+    alert("Kopyalandı!");
+  };
+
+  // Select all
   const selectAllImages = () => {
     if (selectedImages.size === images.length) {
       setSelectedImages(new Set());
     } else {
-      setSelectedImages(new Set(images.map(img => img.url)));
-    }
-  };
-
-  const selectAllVideos = () => {
-    if (selectedVideos.size === videos.length) {
-      setSelectedVideos(new Set());
-    } else {
-      setSelectedVideos(new Set(videos.map(vid => vid.url)));
-    }
-  };
-
-  const selectAllTexts = () => {
-    if (selectedTexts.size === texts.length) {
-      setSelectedTexts(new Set());
-    } else {
-      setSelectedTexts(new Set(texts.map(txt => txt.content)));
+      setSelectedImages(new Set(images.map(i => i.url)));
     }
   };
 
@@ -316,34 +285,32 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       {/* Header */}
-      <header className="bg-gray-800 border-b border-gray-700 shadow-lg">
+      <header className="bg-gray-800 border-b border-gray-700">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="bg-gradient-to-br from-green-500 to-blue-600 p-2 rounded-lg">
-                <span className="text-2xl">🔍</span>
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Web Sitesi Tarama Aracı</h1>
-                <p className="text-gray-400 text-sm">Görsel, Video ve Metin Toplayıcı</p>
-              </div>
+          <div className="flex items-center gap-4">
+            <div className="bg-gradient-to-br from-green-500 to-blue-600 p-2 rounded-lg">
+              <span className="text-2xl">🔍</span>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold">Gelişmiş Web Tarayıcı</h1>
+              <p className="text-gray-400 text-sm">Playwright + yt-dlp • Görsel, Video, YouTube İndirici</p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* URL Input Section */}
+      {/* URL Input */}
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-6">
         <div className="container mx-auto">
           <div className="flex flex-col md:flex-row gap-4 items-end">
             <div className="flex-1">
-              <label className="block text-gray-400 text-sm mb-2">Web Sitesi URL'si</label>
+              <label className="block text-gray-400 text-sm mb-2">Web Sitesi URL</label>
               <input
                 type="text"
                 value={targetUrl}
                 onChange={(e) => setTargetUrl(e.target.value)}
                 placeholder="örn: www.example.com"
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 outline-none"
                 disabled={crawlStatus.status === "running"}
               />
             </div>
@@ -352,37 +319,32 @@ function App() {
               <input
                 type="number"
                 value={maxPages}
-                onChange={(e) => setMaxPages(parseInt(e.target.value) || 50)}
+                onChange={(e) => setMaxPages(parseInt(e.target.value) || 30)}
                 min="1"
-                max="500"
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
+                max="200"
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 outline-none"
                 disabled={crawlStatus.status === "running"}
               />
             </div>
-            <div>
-              {crawlStatus.status === "running" ? (
-                <button
-                  onClick={stopCrawl}
-                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-                >
-                  ⏹ Durdur
-                </button>
-              ) : (
-                <button
-                  onClick={startCrawl}
-                  disabled={loading}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-                >
-                  {loading ? "⏳ Başlatılıyor..." : "🚀 Taramayı Başlat"}
-                </button>
-              )}
-            </div>
+            {crawlStatus.status === "running" ? (
+              <button onClick={stopCrawl} className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold">
+                ⏹ Durdur
+              </button>
+            ) : (
+              <button
+                onClick={startCrawl}
+                disabled={loading}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold"
+              >
+                {loading ? "⏳ Başlatılıyor..." : "🚀 Taramayı Başlat"}
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Progress Bar */}
-      {["running", "starting", "completed", "stopped", "error"].includes(crawlStatus.status) && (
+      {/* Progress */}
+      {["running", "starting", "completed", "error"].includes(crawlStatus.status) && (
         <div className="bg-gray-800 border-b border-gray-700 px-4 py-4">
           <div className="container mx-auto">
             <ProgressBar progress={crawlStatus} status={crawlStatus.status} />
@@ -393,13 +355,13 @@ function App() {
       {/* Stats */}
       {summary && (
         <div className="container mx-auto px-4 py-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            <StatCard title="Taranan Sayfa" value={summary.total_urls || 0} icon="📄" color="blue" />
-            <StatCard title="Görseller" value={summary.total_images || 0} icon="🖼️" color="green" />
-            <StatCard title="Videolar" value={summary.total_videos || 0} icon="🎬" color="purple" />
-            <StatCard title="Metinler" value={summary.total_texts || 0} icon="📝" color="yellow" />
-            <StatCard title="Sorunlar" value={summary.issues_count || 0} icon="⚠️" color="red" />
-            <StatCard title="Domain" value={summary.domain?.substring(0, 15) || "-"} icon="🌐" color="pink" />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <StatCard title="Sayfa" value={summary.total_urls || 0} icon="📄" color="blue" />
+            <StatCard title="Görsel" value={summary.total_images || 0} icon="🖼️" color="green" />
+            <StatCard title="Video" value={summary.total_videos || 0} icon="🎬" color="purple" />
+            <StatCard title="YouTube" value={summary.total_youtube || 0} icon="▶" color="red" />
+            <StatCard title="Metin" value={summary.total_texts || 0} icon="📝" color="yellow" />
+            <StatCard title="Sorun" value={summary.issues_count || 0} icon="⚠️" color="pink" />
           </div>
         </div>
       )}
@@ -407,26 +369,23 @@ function App() {
       {/* Tabs */}
       <nav className="bg-gray-800 border-b border-gray-700">
         <div className="container mx-auto px-4">
-          <div className="flex gap-1">
+          <div className="flex gap-1 overflow-x-auto">
             {[
               { id: "images", label: "🖼️ Görseller", count: images.length },
-              { id: "videos", label: "🎬 Videolar", count: videos.length },
+              { id: "youtube", label: "▶ YouTube", count: videos.youtube?.length || 0 },
+              { id: "videos", label: "🎬 Videolar", count: videos.videos?.length || 0 },
               { id: "texts", label: "📝 Metinler", count: texts.length },
               { id: "issues", label: "⚠️ Sorunlar", count: issues.length },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-3 font-medium transition-colors relative ${
-                  activeTab === tab.id
-                    ? "text-blue-400 border-b-2 border-blue-400"
-                    : "text-gray-400 hover:text-white"
+                className={`px-4 py-3 font-medium whitespace-nowrap ${
+                  activeTab === tab.id ? "text-green-400 border-b-2 border-green-400" : "text-gray-400 hover:text-white"
                 }`}
               >
                 {tab.label}
-                {tab.count > 0 && (
-                  <span className="ml-2 bg-gray-700 px-2 py-0.5 rounded-full text-xs">{tab.count}</span>
-                )}
+                {tab.count > 0 && <span className="ml-2 bg-gray-700 px-2 py-0.5 rounded-full text-xs">{tab.count}</span>}
               </button>
             ))}
           </div>
@@ -435,42 +394,35 @@ function App() {
 
       {/* Content */}
       <main className="container mx-auto px-4 py-6">
-        {/* Images Tab */}
+        {/* Images */}
         {activeTab === "images" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-4">
-                <button
-                  onClick={selectAllImages}
-                  className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm"
-                >
-                  {selectedImages.size === images.length ? "Seçimi Kaldır" : "Tümünü Seç"}
+                <button onClick={selectAllImages} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm">
+                  {selectedImages.size === images.length && images.length > 0 ? "Seçimi Kaldır" : "Tümünü Seç"}
                 </button>
                 <span className="text-gray-400">{selectedImages.size} seçili</span>
               </div>
               <button
-                onClick={() => downloadSelected("images")}
+                onClick={downloadImages}
                 disabled={selectedImages.size === 0 || downloading}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold"
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-lg font-semibold"
               >
-                {downloading ? "⏳ İndiriliyor..." : `📥 Seçilenleri İndir (${selectedImages.size})`}
+                {downloading ? "⏳ İndiriliyor..." : `📥 İndir (${selectedImages.size})`}
               </button>
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {images.map((image, index) => (
+              {images.map((image, i) => (
                 <ImageCard
-                  key={index}
+                  key={i}
                   image={image}
                   selected={selectedImages.has(image.url)}
                   onToggle={() => {
-                    const newSelected = new Set(selectedImages);
-                    if (newSelected.has(image.url)) {
-                      newSelected.delete(image.url);
-                    } else {
-                      newSelected.add(image.url);
-                    }
-                    setSelectedImages(newSelected);
+                    const newSet = new Set(selectedImages);
+                    newSet.has(image.url) ? newSet.delete(image.url) : newSet.add(image.url);
+                    setSelectedImages(newSet);
                   }}
                 />
               ))}
@@ -479,98 +431,91 @@ function App() {
             {images.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-4xl mb-4">🖼️</p>
-                <p>Henüz görsel bulunamadı. Önce bir web sitesi tarayın.</p>
+                <p>Görsel bulunamadı. Site tarayın.</p>
               </div>
             )}
           </div>
         )}
 
-        {/* Videos Tab */}
-        {activeTab === "videos" && (
+        {/* YouTube */}
+        {activeTab === "youtube" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={selectAllVideos}
-                  className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm"
-                >
-                  {selectedVideos.size === videos.length ? "Seçimi Kaldır" : "Tümünü Seç"}
-                </button>
-                <span className="text-gray-400">{selectedVideos.size} seçili</span>
-              </div>
-              <button
-                onClick={() => downloadSelected("videos")}
-                disabled={selectedVideos.size === 0 || downloading}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold"
-              >
-                {downloading ? "⏳ İndiriliyor..." : `📥 Seçilenleri İndir (${selectedVideos.size})`}
-              </button>
+            <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-4 mb-4">
+              <p className="text-yellow-400 font-semibold">⚠️ YouTube İndirme</p>
+              <p className="text-yellow-200 text-sm mt-1">Kişisel kullanım için. Ticari kullanım ve dağıtım yasaktır.</p>
             </div>
             
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {videos.map((video, index) => (
-                <VideoCard
-                  key={index}
-                  video={video}
-                  selected={selectedVideos.has(video.url)}
-                  onToggle={() => {
-                    const newSelected = new Set(selectedVideos);
-                    if (newSelected.has(video.url)) {
-                      newSelected.delete(video.url);
-                    } else {
-                      newSelected.add(video.url);
-                    }
-                    setSelectedVideos(newSelected);
-                  }}
-                />
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {(videos.youtube || []).map((video, i) => (
+                <YouTubeCard key={i} video={video} onDownload={downloadYouTube} downloading={ytDownloading} />
               ))}
             </div>
             
-            {videos.length === 0 && (
+            {(!videos.youtube || videos.youtube.length === 0) && (
               <div className="text-center py-12 text-gray-500">
-                <p className="text-4xl mb-4">🎬</p>
-                <p>Henüz video bulunamadı.</p>
+                <p className="text-4xl mb-4">▶</p>
+                <p>YouTube videosu bulunamadı.</p>
               </div>
             )}
           </div>
         )}
 
-        {/* Texts Tab */}
+        {/* Videos */}
+        {activeTab === "videos" && (
+          <div className="space-y-4">
+            {(videos.videos || []).map((video, i) => (
+              <div key={i} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div className="flex items-center gap-4">
+                  <span className="text-3xl">🎬</span>
+                  <div className="flex-1">
+                    <p className="text-gray-300 truncate">{video.url}</p>
+                    <p className="text-gray-500 text-sm">{video.type}</p>
+                  </div>
+                  <a
+                    href={video.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
+                  >
+                    Aç
+                  </a>
+                </div>
+              </div>
+            ))}
+            
+            {(!videos.videos || videos.videos.length === 0) && (
+              <div className="text-center py-12 text-gray-500">
+                <p className="text-4xl mb-4">🎬</p>
+                <p>Video bulunamadı.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Texts */}
         {activeTab === "texts" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={selectAllTexts}
-                  className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm"
-                >
-                  {selectedTexts.size === texts.length ? "Seçimi Kaldır" : "Tümünü Seç"}
-                </button>
-                <span className="text-gray-400">{selectedTexts.size} seçili</span>
-              </div>
+              <span className="text-gray-400">{selectedTexts.size} seçili</span>
               <button
-                onClick={copySelectedTexts}
+                onClick={copyTexts}
                 disabled={selectedTexts.size === 0}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold"
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg"
               >
-                📋 Seçilenleri Kopyala ({selectedTexts.size})
+                📋 Kopyala ({selectedTexts.size})
               </button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {texts.map((text, index) => (
+              {texts.map((text, i) => (
                 <TextCard
-                  key={index}
+                  key={i}
                   text={text}
                   selected={selectedTexts.has(text.content)}
                   onToggle={() => {
-                    const newSelected = new Set(selectedTexts);
-                    if (newSelected.has(text.content)) {
-                      newSelected.delete(text.content);
-                    } else {
-                      newSelected.add(text.content);
-                    }
-                    setSelectedTexts(newSelected);
+                    const newSet = new Set(selectedTexts);
+                    newSet.has(text.content) ? newSet.delete(text.content) : newSet.add(text.content);
+                    setSelectedTexts(newSet);
                   }}
                 />
               ))}
@@ -579,38 +524,27 @@ function App() {
             {texts.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-4xl mb-4">📝</p>
-                <p>Henüz metin bulunamadı.</p>
+                <p>Metin bulunamadı.</p>
               </div>
             )}
           </div>
         )}
 
-        {/* Issues Tab */}
+        {/* Issues */}
         {activeTab === "issues" && (
           <div className="space-y-4">
-            {issues.map((issue, index) => (
-              <div key={index} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-                <div className="flex items-start gap-3">
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                    issue.severity === "Critical" ? "bg-red-600" :
-                    issue.severity === "High" ? "bg-orange-500" :
-                    "bg-yellow-500"
-                  } text-white`}>
-                    {issue.severity}
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-gray-300">{issue.issue_type}</p>
-                    <p className="text-gray-500 text-sm mt-1 truncate">{issue.source_url}</p>
-                    <p className="text-yellow-400 text-sm mt-2">{issue.fix_suggestion}</p>
-                  </div>
-                </div>
+            {issues.map((issue, i) => (
+              <div key={i} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <p className="text-gray-300">{issue.issue_type}</p>
+                <p className="text-gray-500 text-sm truncate">{issue.source_url}</p>
+                <p className="text-yellow-400 text-sm mt-2">{issue.fix_suggestion}</p>
               </div>
             ))}
             
             {issues.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <p className="text-4xl mb-4">✅</p>
-                <p>Sorun bulunamadı!</p>
+                <p>Sorun yok!</p>
               </div>
             )}
           </div>
@@ -620,7 +554,7 @@ function App() {
       {/* Footer */}
       <footer className="bg-gray-800 border-t border-gray-700 py-4 mt-8">
         <div className="container mx-auto px-4 text-center text-gray-500 text-sm">
-          <p>Web Sitesi Tarama ve İçerik Toplama Aracı</p>
+          <p>Gelişmiş Web Tarayıcı • Playwright + yt-dlp</p>
         </div>
       </footer>
     </div>
