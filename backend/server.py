@@ -57,6 +57,7 @@ logger = logging.getLogger(__name__)
 class CrawlStartRequest(BaseModel):
     target_url: str = "https://www.demart.com.tr"
     max_concurrent: int = 5
+    enable_ai_image_analysis: bool = True  # AI görsel analizi etkinleştir
 
 
 class CrawlStatusResponse(BaseModel):
