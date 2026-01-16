@@ -5,7 +5,7 @@ services:
     image: mongo:6.0
     container_name: website-scanner-mongodb
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - mongodb_data:/data/db
     networks:
@@ -17,7 +17,7 @@ services:
       dockerfile: Dockerfile
     container_name: website-scanner-backend
     ports:
-      - "8001:8001"
+      - "8002:8001"
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=website_scanner
@@ -34,7 +34,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - REACT_APP_BACKEND_URL=http://localhost:8001
+        - REACT_APP_BACKEND_URL=http://localhost:8002
     container_name: website-scanner-frontend
     ports:
       - "3006:3006"
