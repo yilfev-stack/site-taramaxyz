@@ -279,6 +279,8 @@ class DemartAPITester:
                             print("⚠️ Crawl did not complete in time")
                     else:
                         print(f"⚠️ Crawl status: {data.get('status')}")
+            except Exception as e:
+                print(f"Error checking crawl status: {e}")
         
         # Test stop functionality
         self.test_stop_crawl()
