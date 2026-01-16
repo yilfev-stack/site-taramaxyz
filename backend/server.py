@@ -72,6 +72,53 @@ class DirectVideoDownloadRequest(BaseModel):
     site: str = "auto"  # auto, youtube, vk, tiktok, etc.
 
 
+@api_router.post("/download/direct-image")
+async def download_direct_image(url: str):
+    """Tek bir görseli direkt indir"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=60), ssl=False) as resp:
+                if resp.status == 200:
+                    # Dosya adı
+                    filename = url.split('/')[-1].split('?')[0]
+                    if not filename or '.' not in filename:
+                        content_type = resp.headers.get('content-type', '')
+                        ext = '.jpg'
+                        if 'png' in content_type:
+                            ext = '.png'
+                        elif 'gif' in content_type:
+                            ext = '.gif'
+                        elif 'webp' in content_type:
+                            ext = '.webp'
+                        filename = f"image_{uuid.uuid4().hex[:8]}{ext}"
+                    
+                    filepath = DOWNLOADS_DIR / filename
+                    content = await resp.read()
+                    
+                    async with aiofiles.open(filepath, 'wb') as f:
+                        await f.write(content)
+                    
+                    return {
+                        "success": True,
+                        "filename": filename,
+                        "size_kb": len(content) / 1024,
+                        "download_url": f"/api/download/file-direct/{filename}"
+                    }
+                else:
+                    return {"success": False, "message": f"HTTP {resp.status}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@api_router.get("/download/file-direct/{filename}")
+async def get_direct_file(filename: str):
+    """İndirilen dosyayı getir"""
+    filepath = DOWNLOADS_DIR / filename
+    if filepath.exists():
+        return FileResponse(str(filepath), filename=filename)
+    return {"error": "Dosya bulunamadı"}
+
+
 # WebSocket
 class ConnectionManager:
     def __init__(self):
