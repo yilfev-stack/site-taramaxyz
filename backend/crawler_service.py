@@ -419,9 +419,9 @@ class DemartCrawler:
             element_location = self.get_element_location(link)
             await self._check_link_language(url, url_language, full_url, link_text, element_location)
         
-        # Extract images
+        # Extract images - standard img tags
         for img in soup.find_all('img'):
-            src = img.get('src', '') or img.get('data-src', '')
+            src = img.get('src', '') or img.get('data-src', '') or img.get('data-lazy', '')
             if src:
                 full_src = urljoin(url, src)
                 alt = img.get('alt', '')
