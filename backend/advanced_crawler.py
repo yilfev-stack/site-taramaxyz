@@ -102,15 +102,20 @@ class AdvancedCrawler:
         if len(self.visited_urls) >= self.max_pages:
             return
         
-        self.visited_urls.add(url)
+              self.visited_urls.add(url)
         logger.info(f"Crawling: {url}")
         
-              # Sayfaya git
+        try:
+            # Sayfaya git
             await page.goto(url, wait_until='domcontentloaded', timeout=30000)
             await page.wait_for_timeout(500)  # JS'in yüklenmesini bekle
             if "vk.com" in url or "vkvideo.ru" in url:
                 await page.wait_for_timeout(1000)
                 try:
+                    await page.wait_for_selector('a[href*="video"], .VideoCard', timeout=1500)
+                except Exception:
+                    pass
+
                     await page.wait_for_selector('a[href*="video"], .VideoCard', timeout=1500)
                 except Exception:
                     pass
@@ -324,6 +329,7 @@ class AdvancedCrawler:
                     if not re.search(r'(video|clip)-?\d+_\d+', vk_url):
                         continue
 
+                    # Thumbnail varsa ekle
                     thumbnail = vid.get('thumbnail', '')
                     self.videos.append(MediaItem(
                         url=vk_url,
@@ -332,6 +338,7 @@ class AdvancedCrawler:
                         page_url=url,
                         downloadable=True
                     ))
+
                 else:
                     self.videos.append(MediaItem(
                         url=vid['url'],

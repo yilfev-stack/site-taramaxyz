@@ -108,7 +108,7 @@ const DownloadProgressBar = ({ downloadId, progress, onComplete }) => {
 };
 
 // Download Queue Status Component
-const DownloadQueueStatus = ({ queueStatus, onClear, onResume, onDeleteIncomplete }) => {
+const DownloadQueueStatus = ({ queueStatus, onClear, onResume, onResumeAll, onDeleteIncomplete }) => {
   const hasActiveDownloads = queueStatus && Object.keys(queueStatus.progress || {}).length > 0;
   const hasIncomplete = queueStatus && Object.keys(queueStatus.incomplete || {}).length > 0;
   
@@ -188,6 +188,12 @@ const DownloadQueueStatus = ({ queueStatus, onClear, onResume, onDeleteIncomplet
             <h5 className="text-xs font-semibold text-orange-400 flex items-center gap-1">
               <span>⏸️</span> Yarım Kalan İndirmeler
             </h5>
+            <button
+              onClick={onResumeAll}
+              className="text-xs text-orange-300 hover:text-orange-200"
+            >
+              Tümünü Devam Ettir
+            </button>
           </div>
           <div className="space-y-2 max-h-32 overflow-y-auto">
             {Object.entries(queueStatus.incomplete || {}).map(([id, item]) => (
@@ -819,6 +825,22 @@ function App() {
     }
   };
 
+  const resumeAllIncompleteDownloads = async () => {
+    const incompleteIds = Object.keys(downloadQueue?.incomplete || {});
+    if (incompleteIds.length === 0) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        incompleteIds.map((downloadId) => axios.post(`${API}/download/resume/${downloadId}`))
+      );
+      fetchDownloadQueue();
+    } catch (e) {
+      alert("Hata: " + e.message);
+    }
+  };
+
   // Delete incomplete download
   const deleteIncompleteDownload = async (downloadId) => {
     try {
@@ -1014,10 +1036,11 @@ function App() {
             </div>
             
             {/* Download Queue Status */}
-            <DownloadQueueStatus 
-              queueStatus={downloadQueue} 
+            <DownloadQueueStatus
+              queueStatus={downloadQueue}
               onClear={clearCompletedDownloads}
               onResume={resumeIncompleteDownload}
+              onResumeAll={resumeAllIncompleteDownloads}
               onDeleteIncomplete={deleteIncompleteDownload}
             />
             
@@ -1089,6 +1112,7 @@ function App() {
               queueStatus={downloadQueue} 
               onClear={clearCompletedDownloads}
               onResume={resumeIncompleteDownload}
+              onResumeAll={resumeAllIncompleteDownloads}
               onDeleteIncomplete={deleteIncompleteDownload}
             />
             
@@ -1134,6 +1158,7 @@ function App() {
               queueStatus={downloadQueue} 
               onClear={clearCompletedDownloads}
               onResume={resumeIncompleteDownload}
+              onResumeAll={resumeAllIncompleteDownloads}
               onDeleteIncomplete={deleteIncompleteDownload}
             />
             
