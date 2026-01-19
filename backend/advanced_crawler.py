@@ -114,7 +114,7 @@ class AdvancedCrawler:
 
         return vk_url
 
-    async def crawl_page(self, page: Page, url: str) -> None:
+       async def crawl_page(self, page: Page, url: str) -> None:
         """Tek bir sayfayı Playwright ile tara"""
         if self.should_stop or url in self.visited_urls:
             return
@@ -162,6 +162,7 @@ class AdvancedCrawler:
                 });
                 return imgs;
             }''')
+
             
             for img in images:
                 if img['width'] >= 50 or img['height'] >= 50 or img['width'] == 0:
@@ -329,11 +330,11 @@ class AdvancedCrawler:
                             page_url=url,
                             downloadable=True
                         ))
-                elif vid['type'] == 'vk':
+                     elif vid['type'] == 'vk':
                     vk_url = self.normalize_vk_url(vid['url'])
                     if not vk_url:
                         continue
-                    
+
                     # Thumbnail varsa ekle
                     thumbnail = vid.get('thumbnail', '')
                     self.videos.append(MediaItem(
@@ -343,6 +344,7 @@ class AdvancedCrawler:
                         page_url=url,
                         downloadable=True
                     ))
+
                 else:
                     self.videos.append(MediaItem(
                         url=vid['url'],
