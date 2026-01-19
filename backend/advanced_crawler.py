@@ -290,9 +290,13 @@ class AdvancedCrawler:
                         match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
                         if match:
                             vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
+                    
+                    # Thumbnail varsa ekle
+                    thumbnail = vid.get('thumbnail', '')
                     self.videos.append(MediaItem(
                         url=vk_url,
                         type='vk',
+                        thumbnail=thumbnail,
                         page_url=url,
                         downloadable=True
                     ))
