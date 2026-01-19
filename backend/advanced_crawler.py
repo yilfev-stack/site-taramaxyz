@@ -94,6 +94,26 @@ class AdvancedCrawler:
                 return match.group(1)
         return None
 
+    def normalize_vk_url(self, vk_url: str) -> Optional[str]:
+        """VK video/clip URL'lerini normalize et ve doğrula."""
+        if not vk_url:
+            return None
+
+        if 'video_ext.php' in vk_url or 'embed' in vk_url:
+            match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
+            if match:
+                vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
+
+        if 'vkvideo.ru' in vk_url:
+            match = re.search(r'(video|clip)(-?\d+_\d+)', vk_url)
+            if match:
+                vk_url = f"https://vk.com/{match.group(1)}{match.group(2)}"
+
+        if not re.search(r'(video|clip)-?\d+_\d+', vk_url):
+            return None
+
+        return vk_url
+
     async def crawl_page(self, page: Page, url: str) -> None:
         """Tek bir sayfayı Playwright ile tara"""
         if self.should_stop or url in self.visited_urls:
@@ -310,20 +330,8 @@ class AdvancedCrawler:
                             downloadable=True
                         ))
                 elif vid['type'] == 'vk':
-                    # VK video URL'ini düzelt
-                    vk_url = vid['url']
-                    if 'video_ext.php' in vk_url or 'embed' in vk_url:
-                        # Embed URL'den video ID çıkar
-                        import re
-                        match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
-                        if match:
-                            vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
-                    if 'vkvideo.ru' in vk_url:
-                        match = re.search(r'(video|clip)(-?\d+_\d+)', vk_url)
-                        if match:
-                            vk_url = f"https://vk.com/{match.group(1)}{match.group(2)}"
-                    # Geçersiz VK URL'lerini atla (video ID yoksa)
-                    if not re.search(r'(video|clip)-?\d+_\d+', vk_url):
+                    vk_url = self.normalize_vk_url(vid['url'])
+                    if not vk_url:
                         continue
                     
                     # Thumbnail varsa ekle
