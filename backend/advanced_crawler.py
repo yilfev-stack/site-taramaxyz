@@ -94,24 +94,50 @@ class AdvancedCrawler:
                 return match.group(1)
         return None
 
+    def normalize_vk_url(self, vk_url: str) -> Optional[str]:
+        """VK video/clip URL'lerini normalize et ve doğrula."""
+        if not vk_url:
+            return None
+
+        if 'video_ext.php' in vk_url or 'embed' in vk_url:
+            match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
+            if match:
+                vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
+
+        if 'vkvideo.ru' in vk_url:
+            match = re.search(r'(video|clip)(-?\d+_\d+)', vk_url)
+            if match:
+                vk_url = f"https://vk.com/{match.group(1)}{match.group(2)}"
+
+        if not re.search(r'(video|clip)-?\d+_\d+', vk_url):
+            return None
+
+        return vk_url
+
     async def crawl_page(self, page: Page, url: str) -> None:
         """Tek bir sayfayı Playwright ile tara"""
         if self.should_stop or url in self.visited_urls:
             return
-        
+
         if len(self.visited_urls) >= self.max_pages:
             return
-        
+
         self.visited_urls.add(url)
         logger.info(f"Crawling: {url}")
-        
+
         try:
             # Sayfaya git
-            await page.goto(url, wait_until='networkidle', timeout=30000)
-            await page.wait_for_timeout(2000)  # JS'in yüklenmesini bekle
-            
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_timeout(500)  # JS'in yüklenmesini bekle
+            if "vk.com" in url or "vkvideo.ru" in url:
+                await page.wait_for_timeout(1000)
+                try:
+                    await page.wait_for_selector('a[href*="video"], .VideoCard', timeout=1500)
+                except Exception:
+                    pass
+
             # Görselleri topla
-            images = await page.evaluate('''() => {
+            images = await page.evaluate(r'''() => {
                 const imgs = [];
                 document.querySelectorAll('img').forEach(img => {
                     const src = img.src || img.dataset.src || img.dataset.lazy;
@@ -147,11 +173,20 @@ class AdvancedCrawler:
                     ))
             
             # Videoları topla - Önce sayfa URL'lerini bul (VK, YouTube, vb.)
-            videos = await page.evaluate('''() => {
+            videos = await page.evaluate(r'''() => {
                 const vids = [];
                 const seen = new Set();
                 const currentUrl = window.location.href;
                 const isVkSite = currentUrl.includes('vk.com') || currentUrl.includes('vkvideo.ru');
+                const getBackgroundImage = (el) => {
+                    if (!el) return '';
+                    const style = getComputedStyle(el).backgroundImage;
+                    if (!style || style === 'none') {
+                        return '';
+                    }
+                    const match = style.match(/url\\(["']?([^"')]+)["']?\\)/);
+                    return match ? match[1] : '';
+                };
                 
                 // VK video sayfalarında - video kartlarından URL'leri çıkar
                 if (isVkSite) {
@@ -170,10 +205,15 @@ class AdvancedCrawler:
                         document.querySelectorAll(selector).forEach(el => {
                             let href = el.href || el.getAttribute('href');
                             const videoId = el.dataset?.videoId;
+                            const rawId = el.dataset?.videoRawId;
+                            const thumbData = el.dataset?.thumb || el.dataset?.preview || el.dataset?.poster;
                             
                             // data-video-id varsa URL oluştur
                             if (videoId && !href) {
                                 href = 'https://vk.com/video' + videoId;
+                            }
+                            if (rawId && !href) {
+                                href = 'https://vk.com/video' + rawId;
                             }
                             
                             if (href && !seen.has(href)) {
@@ -186,7 +226,15 @@ class AdvancedCrawler:
                                         // Thumbnail bulmaya çalış
                                         let thumb = '';
                                         const img = el.querySelector('img') || el.closest('.VideoCard')?.querySelector('img');
-                                        if (img) thumb = img.src || img.dataset.src || '';
+                                        if (img) {
+                                            thumb = img.src || img.dataset.src || img.dataset.lazy || img.dataset.lazySrc || '';
+                                        }
+                                        if (!thumb && thumbData) {
+                                            thumb = thumbData;
+                                        }
+                                        if (!thumb) {
+                                            thumb = getBackgroundImage(el) || getBackgroundImage(el.closest('.VideoCard') || el);
+                                        }
                                         vids.push({ url: cleanUrl, type: 'vk', thumbnail: thumb });
                                     }
                                 }
@@ -238,7 +286,7 @@ class AdvancedCrawler:
                 });
                 
                 // VK video links
-                document.querySelectorAll('a[href*="vk.com/video"], a[href*="vkvideo"]').forEach(a => {
+                document.querySelectorAll('a[href*="vk.com/video"], a[href*="vkvideo"], a[href*="vkvideo.ru/video"], a[href*="vkvideo.ru/clip"]').forEach(a => {
                     if (!seen.has(a.href)) {
                         seen.add(a.href);
                         vids.push({ url: a.href, type: 'vk' });
@@ -282,14 +330,9 @@ class AdvancedCrawler:
                             downloadable=True
                         ))
                 elif vid['type'] == 'vk':
-                    # VK video URL'ini düzelt
-                    vk_url = vid['url']
-                    if 'video_ext.php' in vk_url or 'embed' in vk_url:
-                        # Embed URL'den video ID çıkar
-                        import re
-                        match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
-                        if match:
-                            vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
+                    vk_url = self.normalize_vk_url(vid['url'])
+                    if not vk_url:
+                        continue
                     
                     # Thumbnail varsa ekle
                     thumbnail = vid.get('thumbnail', '')
@@ -309,7 +352,7 @@ class AdvancedCrawler:
                     ))
             
             # Metinleri topla
-            texts = await page.evaluate('''() => {
+            texts = await page.evaluate(r'''() => {
                 const txts = [];
                 document.querySelectorAll('h1, h2, h3, p').forEach(el => {
                     const text = el.innerText.trim();
@@ -333,7 +376,7 @@ class AdvancedCrawler:
                 })
             
             # Internal linkleri topla
-            links = await page.evaluate('''() => {
+            links = await page.evaluate(r'''() => {
                 const hrefs = [];
                 document.querySelectorAll('a[href]').forEach(a => {
                     if (a.href && !a.href.startsWith('javascript:') && !a.href.startsWith('#')) {
@@ -382,7 +425,7 @@ class AdvancedCrawler:
                     if not urls_to_crawl or len(self.visited_urls) >= self.max_pages:
                         break
                     
-                    for url in urls_to_crawl[:5]:  # Batch of 5
+                    for url in urls_to_crawl[:10]:  # Batch of 10
                         if self.should_stop:
                             break
                         await self.crawl_page(page, url)
@@ -417,6 +460,14 @@ class AdvancedCrawler:
                 seen_yt.add(yt.url)
                 unique_yt.append(yt)
         self.youtube_videos = unique_yt
+
+        seen_videos = set()
+        unique_videos = []
+        for vid in self.videos:
+            if vid.url not in seen_videos:
+                seen_videos.add(vid.url)
+                unique_videos.append(vid)
+        self.videos = unique_videos
         
         self.is_running = False
         
