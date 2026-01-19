@@ -6,9 +6,12 @@
       "eta": "Haz\u0131rlan\u0131yor...",
       "downloaded": "",
       "total": "",
-      "status": "starting",
+      "status": "failed",
       "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)"
+      "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+      "result": {
+        "message": "\u0130ndirme ba\u015far\u0131s\u0131z"
+      }
     }
   },
   "incomplete": {}
