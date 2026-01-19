@@ -146,31 +146,66 @@ class AdvancedCrawler:
                         page_url=url
                     ))
             
-            # Videoları topla
+            # Videoları topla - Önce sayfa URL'lerini bul (VK, YouTube, vb.)
             videos = await page.evaluate('''() => {
                 const vids = [];
                 const seen = new Set();
+                const currentUrl = window.location.href;
+                const isVkSite = currentUrl.includes('vk.com') || currentUrl.includes('vkvideo.ru');
                 
-                // Video tags - src ve data-src kontrol et
-                document.querySelectorAll('video').forEach(v => {
-                    let src = v.src || v.currentSrc || v.querySelector('source')?.src;
-                    // data-src attribute'ları da kontrol et
-                    if (!src || src.startsWith('blob:')) {
-                        src = v.dataset.src || v.getAttribute('data-src') || v.getAttribute('data-video-src');
-                    }
-                    // source tag'larını kontrol et
-                    if (!src || src.startsWith('blob:')) {
-                        const sources = v.querySelectorAll('source');
-                        for (const s of sources) {
-                            if (s.src && !s.src.startsWith('blob:')) {
-                                src = s.src;
-                                break;
+                // VK video sayfalarında - video kartlarından URL'leri çıkar
+                if (isVkSite) {
+                    // VK video kartları - farklı seçiciler dene
+                    const vkSelectors = [
+                        'a[href*="/video-"]',
+                        'a[href*="/video@"]',
+                        'a[href*="video"][href*="_"]',
+                        '[data-video-id]',
+                        '.VideoCard a',
+                        '.video_item a',
+                        '.VideoThumb a'
+                    ];
+                    
+                    vkSelectors.forEach(selector => {
+                        document.querySelectorAll(selector).forEach(el => {
+                            let href = el.href || el.getAttribute('href');
+                            const videoId = el.dataset?.videoId;
+                            
+                            // data-video-id varsa URL oluştur
+                            if (videoId && !href) {
+                                href = 'https://vk.com/video' + videoId;
                             }
+                            
+                            if (href && !seen.has(href)) {
+                                // VK video URL formatını kontrol et
+                                const vkMatch = href.match(/video(-?\d+_\d+)/);
+                                if (vkMatch) {
+                                    const cleanUrl = 'https://vk.com/video' + vkMatch[1];
+                                    if (!seen.has(cleanUrl)) {
+                                        seen.add(cleanUrl);
+                                        // Thumbnail bulmaya çalış
+                                        let thumb = '';
+                                        const img = el.querySelector('img') || el.closest('.VideoCard')?.querySelector('img');
+                                        if (img) thumb = img.src || img.dataset.src || '';
+                                        vids.push({ url: cleanUrl, type: 'vk', thumbnail: thumb });
+                                    }
+                                }
+                            }
+                        });
+                    });
+                }
+                
+                // CDN video URL'lerini ATLA - bunlar süreli ve çalışmaz
+                // Sadece direkt indirilebilir video dosyalarını al (.mp4 dosyaları)
+                document.querySelectorAll('video').forEach(v => {
+                    let src = v.src || v.currentSrc;
+                    // CDN URL'lerini atla
+                    if (src && !src.startsWith('blob:') && !src.includes('okcdn') && !src.includes('vkuservideo')) {
+                        // Sadece temiz .mp4/.webm URL'lerini al
+                        if (src.match(/\.(mp4|webm|mov)(\?|$)/i) && !seen.has(src)) {
+                            seen.add(src);
+                            vids.push({ url: src, type: 'video' });
                         }
-                    }
-                    if (src && !src.startsWith('blob:') && !seen.has(src)) {
-                        seen.add(src);
-                        vids.push({ url: src, type: 'video' });
                     }
                 });
                 
