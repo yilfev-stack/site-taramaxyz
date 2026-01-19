@@ -94,17 +94,37 @@ class AdvancedCrawler:
                 return match.group(1)
         return None
 
-    async def crawl_page(self, page: Page, url: str) -> None:
+    def normalize_vk_url(self, vk_url: str) -> Optional[str]:
+        """VK video/clip URL'lerini normalize et ve doğrula."""
+        if not vk_url:
+            return None
+
+        if 'video_ext.php' in vk_url or 'embed' in vk_url:
+            match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
+            if match:
+                vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
+
+        if 'vkvideo.ru' in vk_url:
+            match = re.search(r'(video|clip)(-?\d+_\d+)', vk_url)
+            if match:
+                vk_url = f"https://vk.com/{match.group(1)}{match.group(2)}"
+
+        if not re.search(r'(video|clip)-?\d+_\d+', vk_url):
+            return None
+
+        return vk_url
+
+       async def crawl_page(self, page: Page, url: str) -> None:
         """Tek bir sayfayı Playwright ile tara"""
         if self.should_stop or url in self.visited_urls:
             return
-        
+
         if len(self.visited_urls) >= self.max_pages:
             return
-        
-              self.visited_urls.add(url)
+
+        self.visited_urls.add(url)
         logger.info(f"Crawling: {url}")
-        
+
         try:
             # Sayfaya git
             await page.goto(url, wait_until='domcontentloaded', timeout=30000)
@@ -116,13 +136,8 @@ class AdvancedCrawler:
                 except Exception:
                     pass
 
-                    await page.wait_for_selector('a[href*="video"], .VideoCard', timeout=1500)
-                except Exception:
-                    pass
-            
             # Görselleri topla
-            images = await page.evaluate('''() => {
-
+            images = await page.evaluate(r'''() => {
                 const imgs = [];
                 document.querySelectorAll('img').forEach(img => {
                     const src = img.src || img.dataset.src || img.dataset.lazy;
@@ -147,6 +162,7 @@ class AdvancedCrawler:
                 });
                 return imgs;
             }''')
+
             
             for img in images:
                 if img['width'] >= 50 or img['height'] >= 50 or img['width'] == 0:
@@ -158,7 +174,7 @@ class AdvancedCrawler:
                     ))
             
             # Videoları topla - Önce sayfa URL'lerini bul (VK, YouTube, vb.)
-            videos = await page.evaluate('''() => {
+            videos = await page.evaluate(r'''() => {
                 const vids = [];
                 const seen = new Set();
                 const currentUrl = window.location.href;
@@ -314,19 +330,9 @@ class AdvancedCrawler:
                             page_url=url,
                             downloadable=True
                         ))
-                elif vid['type'] == 'vk':
-                    # VK video URL'ini düzelt
-                    vk_url = vid['url']
-                    if 'video_ext.php' in vk_url or 'embed' in vk_url:
-                        # Embed URL'den video ID çıkar
-                        import re
-                        match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
-                                  if 'vkvideo.ru' in vk_url:
-                        match = re.search(r'(video|clip)(-?\d+_\d+)', vk_url)
-                        if match:
-                            vk_url = f"https://vk.com/{match.group(1)}{match.group(2)}"
-                    # Geçersiz VK URL'lerini atla (video ID yoksa)
-                    if not re.search(r'(video|clip)-?\d+_\d+', vk_url):
+                     elif vid['type'] == 'vk':
+                    vk_url = self.normalize_vk_url(vid['url'])
+                    if not vk_url:
                         continue
 
                     # Thumbnail varsa ekle
@@ -348,7 +354,7 @@ class AdvancedCrawler:
                     ))
             
             # Metinleri topla
-            texts = await page.evaluate('''() => {
+            texts = await page.evaluate(r'''() => {
                 const txts = [];
                 document.querySelectorAll('h1, h2, h3, p').forEach(el => {
                     const text = el.innerText.trim();
@@ -372,7 +378,7 @@ class AdvancedCrawler:
                 })
             
             # Internal linkleri topla
-            links = await page.evaluate('''() => {
+            links = await page.evaluate(r'''() => {
                 const hrefs = [];
                 document.querySelectorAll('a[href]').forEach(a => {
                     if (a.href && !a.href.startsWith('javascript:') && !a.href.startsWith('#')) {
