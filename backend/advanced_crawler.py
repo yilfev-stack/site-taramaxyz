@@ -107,8 +107,8 @@ class AdvancedCrawler:
         
         try:
             # Sayfaya git
-            await page.goto(url, wait_until='networkidle', timeout=30000)
-            await page.wait_for_timeout(2000)  # JS'in yüklenmesini bekle
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_timeout(500)  # JS'in yüklenmesini bekle
             
             # Görselleri topla
             images = await page.evaluate('''() => {
@@ -152,6 +152,15 @@ class AdvancedCrawler:
                 const seen = new Set();
                 const currentUrl = window.location.href;
                 const isVkSite = currentUrl.includes('vk.com') || currentUrl.includes('vkvideo.ru');
+                const getBackgroundImage = (el) => {
+                    if (!el) return '';
+                    const style = getComputedStyle(el).backgroundImage;
+                    if (!style || style === 'none') {
+                        return '';
+                    }
+                    const match = style.match(/url\\(["']?([^"')]+)["']?\\)/);
+                    return match ? match[1] : '';
+                };
                 
                 // VK video sayfalarında - video kartlarından URL'leri çıkar
                 if (isVkSite) {
@@ -170,10 +179,15 @@ class AdvancedCrawler:
                         document.querySelectorAll(selector).forEach(el => {
                             let href = el.href || el.getAttribute('href');
                             const videoId = el.dataset?.videoId;
+                            const rawId = el.dataset?.videoRawId;
+                            const thumbData = el.dataset?.thumb || el.dataset?.preview || el.dataset?.poster;
                             
                             // data-video-id varsa URL oluştur
                             if (videoId && !href) {
                                 href = 'https://vk.com/video' + videoId;
+                            }
+                            if (rawId && !href) {
+                                href = 'https://vk.com/video' + rawId;
                             }
                             
                             if (href && !seen.has(href)) {
@@ -186,7 +200,15 @@ class AdvancedCrawler:
                                         // Thumbnail bulmaya çalış
                                         let thumb = '';
                                         const img = el.querySelector('img') || el.closest('.VideoCard')?.querySelector('img');
-                                        if (img) thumb = img.src || img.dataset.src || '';
+                                        if (img) {
+                                            thumb = img.src || img.dataset.src || img.dataset.lazy || img.dataset.lazySrc || '';
+                                        }
+                                        if (!thumb && thumbData) {
+                                            thumb = thumbData;
+                                        }
+                                        if (!thumb) {
+                                            thumb = getBackgroundImage(el) || getBackgroundImage(el.closest('.VideoCard') || el);
+                                        }
                                         vids.push({ url: cleanUrl, type: 'vk', thumbnail: thumb });
                                     }
                                 }
@@ -290,6 +312,9 @@ class AdvancedCrawler:
                         match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
                         if match:
                             vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
+                    # Geçersiz VK URL'lerini atla (video ID yoksa)
+                    if not re.search(r'video-?\d+_\d+', vk_url):
+                        continue
                     
                     # Thumbnail varsa ekle
                     thumbnail = vid.get('thumbnail', '')
@@ -382,7 +407,7 @@ class AdvancedCrawler:
                     if not urls_to_crawl or len(self.visited_urls) >= self.max_pages:
                         break
                     
-                    for url in urls_to_crawl[:5]:  # Batch of 5
+                    for url in urls_to_crawl[:10]:  # Batch of 10
                         if self.should_stop:
                             break
                         await self.crawl_page(page, url)
@@ -417,6 +442,14 @@ class AdvancedCrawler:
                 seen_yt.add(yt.url)
                 unique_yt.append(yt)
         self.youtube_videos = unique_yt
+
+        seen_videos = set()
+        unique_videos = []
+        for vid in self.videos:
+            if vid.url not in seen_videos:
+                seen_videos.add(vid.url)
+                unique_videos.append(vid)
+        self.videos = unique_videos
         
         self.is_running = False
         
