@@ -4,6 +4,7 @@ import axios from "axios";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";
 const API = `${BACKEND_URL}/api`;
+const BULK_VIDEO_REQUEST_DELAY_MS = 750;
 
 // Stat Card
 const StatCard = ({ title, value, icon, color = "blue" }) => {
@@ -744,6 +745,29 @@ function App() {
     }
   };
 
+  const queueVideoDownload = async (url, format, site = "auto") => {
+    const endpoint = site === "youtube" ? "youtube" : "video";
+    const payload = site === "youtube" ? { url, format } : { url, format, site };
+    try {
+      const res = await axios.post(`${API}/download/${endpoint}`, payload);
+      if (res.data.success) {
+        setVideoDownloadProgress(prev => ({
+          ...prev,
+          [res.data.download_id]: {
+            status: res.data.status,
+            queue_position: res.data.queue_position,
+            percent: 0,
+            url
+          }
+        }));
+      } else {
+        alert("İndirme başarısız: " + res.data.message);
+      }
+    } catch (e) {
+      alert("Hata: " + e.message);
+    }
+  };
+
   // Fetch download queue status
   const fetchDownloadQueue = useCallback(async () => {
     try {
@@ -805,6 +829,8 @@ function App() {
     }
   };
 
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
   // Download selected videos (bulk)
   const downloadSelectedVideos = async () => {
     if (selectedVideos.size === 0) {
@@ -812,28 +838,18 @@ function App() {
       return;
     }
     
-    // Her video için indirme başlat
-    for (const videoUrl of selectedVideos) {
-      try {
-        const res = await axios.post(`${API}/download/video`, { url: videoUrl, format: 'video' });
-        if (res.data.success) {
-          setVideoDownloadProgress(prev => ({
-            ...prev,
-            [res.data.download_id]: {
-              status: res.data.status,
-              queue_position: res.data.queue_position,
-              percent: 0,
-              url: videoUrl
-            }
-          }));
-        }
-      } catch (e) {
-        console.error('Video download error:', e);
-      }
-    }
-    
+    const urls = Array.from(selectedVideos);
+    urls.forEach((videoUrl, index) => {
+      const videoItem = (videos.videos || []).find(v => v.url === videoUrl);
+      const site = videoItem?.type || "auto";
+      const delayMs = index * BULK_VIDEO_REQUEST_DELAY_MS;
+      sleep(delayMs).then(async () => {
+        await queueVideoDownload(videoUrl, "video", site);
+      });
+    });
+
     setSelectedVideos(new Set());
-    alert(`${selectedVideos.size} video indirme sırasına eklendi!`);
+    alert(`${urls.length} video indirme sırasına eklendi!`);
   };
 
   // Copy texts
@@ -1202,7 +1218,7 @@ function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          downloadYouTube(video.url, 'video');
+                          queueVideoDownload(video.url, 'video', video.type || 'auto');
                         }}
                         className="flex-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-medium"
                       >
@@ -1211,7 +1227,7 @@ function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          downloadYouTube(video.url, 'audio');
+                          queueVideoDownload(video.url, 'audio', video.type || 'auto');
                         }}
                         className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium"
                       >
