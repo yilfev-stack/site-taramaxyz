@@ -1149,54 +1149,88 @@ function App() {
               </div>
             )}
             
-            {/* Video list */}
-            {(videos.videos || []).map((video, i) => (
-              <div 
-                key={i} 
-                className={`bg-gray-800 rounded-lg p-4 border-2 cursor-pointer transition-all ${
-                  selectedVideos.has(video.url) ? "border-green-500 ring-2 ring-green-500" : "border-gray-700 hover:border-gray-500"
-                }`}
-                onClick={() => {
-                  const newSet = new Set(selectedVideos);
-                  if (newSet.has(video.url)) {
-                    newSet.delete(video.url);
-                  } else {
-                    newSet.add(video.url);
-                  }
-                  setSelectedVideos(newSet);
-                }}
-              >
-                <div className="flex items-center gap-4">
-                  <span className={`text-3xl ${selectedVideos.has(video.url) ? "text-green-400" : ""}`}>
-                    {selectedVideos.has(video.url) ? "✓" : "🎬"}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-gray-300 truncate">{video.url}</p>
-                    <p className="text-gray-500 text-sm">{video.type}</p>
+            {/* Video grid - thumbnail'lı kartlar */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(videos.videos || []).map((video, i) => (
+                <div 
+                  key={i} 
+                  className={`bg-gray-800 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                    selectedVideos.has(video.url) ? "border-green-500 ring-2 ring-green-500" : "border-gray-700 hover:border-gray-500"
+                  }`}
+                  onClick={() => {
+                    const newSet = new Set(selectedVideos);
+                    if (newSet.has(video.url)) {
+                      newSet.delete(video.url);
+                    } else {
+                      newSet.add(video.url);
+                    }
+                    setSelectedVideos(newSet);
+                  }}
+                >
+                  {/* Thumbnail veya placeholder */}
+                  <div className="relative h-40 bg-gray-900">
+                    {video.thumbnail ? (
+                      <img
+                        src={video.thumbnail}
+                        alt={video.title || "Video"}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <span className="text-6xl opacity-50">🎬</span>
+                      </div>
+                    )}
+                    {/* Seçim işareti */}
+                    {selectedVideos.has(video.url) && (
+                      <div className="absolute top-2 right-2 bg-green-500 rounded-full p-1">
+                        <span className="text-white text-lg">✓</span>
+                      </div>
+                    )}
+                    {/* Video tipi badge */}
+                    <div className="absolute bottom-2 left-2 bg-black/70 rounded px-2 py-1 text-xs text-white">
+                      {video.type === 'vk' ? '📹 VK' : video.type === 'vimeo' ? '📹 Vimeo' : '📹 Video'}
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        downloadYouTube(video.url, 'video');
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm"
-                    >
-                      📥 İndir
-                    </button>
-                    <a
-                      href={video.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm"
-                    >
-                      🔗 Aç
-                    </a>
+                  
+                  {/* Video bilgileri */}
+                  <div className="p-3">
+                    <p className="text-sm text-gray-300 truncate mb-2" title={video.url}>
+                      {video.title || video.url}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadYouTube(video.url, 'video');
+                        }}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-medium"
+                      >
+                        📥 Video
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadYouTube(video.url, 'audio');
+                        }}
+                        className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium"
+                      >
+                        🎵 MP3
+                      </button>
+                      <a
+                        href={video.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm"
+                      >
+                        🔗
+                      </a>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
             
             {(!videos.videos || videos.videos.length === 0) && (
               <div className="text-center py-12 text-gray-500">
