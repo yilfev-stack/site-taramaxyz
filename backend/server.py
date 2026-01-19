@@ -52,14 +52,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ===== İndirme Sıra Yönetimi (Max 5 eşzamanlı) =====
+# ===== İndirme Sıra Yönetimi (Maks eşzamanlı) =====
 # İndirme durumunu dosyaya kaydet
 DOWNLOAD_STATE_FILE = ROOT_DIR / 'download_state.json'
 
 class DownloadQueueManager:
-    """Video indirme sıra yöneticisi - Maks 5 eşzamanlı indirme, kalıcı durum"""
+    """Video indirme sıra yöneticisi - Maks eşzamanlı indirme, kalıcı durum"""
     
-    def __init__(self, max_concurrent: int = 5):
+    def __init__(self, max_concurrent: int = 20):
         self.max_concurrent = max_concurrent
         self.active_downloads: Dict[str, Dict] = {}  # download_id -> info
         self.queue: deque = deque()  # Bekleyen indirmeler
@@ -74,12 +74,28 @@ class DownloadQueueManager:
             if DOWNLOAD_STATE_FILE.exists():
                 with open(DOWNLOAD_STATE_FILE, 'r') as f:
                     data = json.load(f)
+                    saved_queue = data.get('queue', [])
                     self.incomplete_downloads = data.get('incomplete', {})
                     # Eski aktif indirmeleri yarım kalan olarak işaretle
                     for did, info in data.get('active', {}).items():
                         if info.get('status') not in ['completed', 'failed']:
                             info['status'] = 'interrupted'
                             self.incomplete_downloads[did] = info
+                    # Kuyruktaki indirmeleri geri yükle
+                    if saved_queue:
+                        self.queue = deque(saved_queue)
+                        for idx, item in enumerate(self.queue):
+                            item['status'] = 'queued'
+                            item['queue_position'] = idx + 1
+                            download_id = item.get('download_id')
+                            if download_id:
+                                self.progress_data[download_id] = {
+                                    'percent': item.get('progress', 0),
+                                    'status': 'queued',
+                                    'queue_position': idx + 1,
+                                    'url': item.get('url', ''),
+                                    'title': item.get('url', '')
+                                }
                     logger.info(f"Loaded {len(self.incomplete_downloads)} incomplete downloads")
         except Exception as e:
             logger.error(f"Error loading download state: {e}")
@@ -89,6 +105,7 @@ class DownloadQueueManager:
         try:
             data = {
                 'active': {k: v for k, v in self.progress_data.items() if v.get('status') not in ['completed']},
+                'queue': list(self.queue),
                 'incomplete': self.incomplete_downloads
             }
             with open(DOWNLOAD_STATE_FILE, 'w') as f:
@@ -167,7 +184,7 @@ class DownloadQueueManager:
                     'url': download_info.get('url', ''),
                     'title': download_info.get('url', '')
                 }
-        
+        self._save_state()
         return download_id
     
     async def start_download(self, download_id: str):
@@ -177,6 +194,31 @@ class DownloadQueueManager:
                 self.active_downloads[download_id]['status'] = 'downloading'
                 if download_id in self.progress_data:
                     self.progress_data[download_id]['status'] = 'downloading'
+
+    async def prime_queue(self) -> List[Dict]:
+        """Kuyruktan boş slotları doldur"""
+        started = []
+        async with self.lock:
+            while self.queue and len(self.active_downloads) < self.max_concurrent:
+                next_download = self.queue.popleft()
+                next_id = next_download['download_id']
+                next_download['status'] = 'starting'
+                self.active_downloads[next_id] = next_download
+                self.progress_data[next_id] = {
+                    'percent': 0,
+                    'status': 'starting',
+                    'url': next_download.get('url', ''),
+                    'title': next_download.get('url', '')
+                }
+                started.append(next_download)
+
+            for i, item in enumerate(self.queue):
+                item['queue_position'] = i + 1
+                if item.get('download_id') in self.progress_data:
+                    self.progress_data[item['download_id']]['queue_position'] = i + 1
+
+        self._save_state()
+        return started
     
     async def complete_download(self, download_id: str, success: bool = True, result: Dict = None):
         """İndirmeyi tamamla ve sıradaki başlat"""
@@ -224,7 +266,7 @@ class DownloadQueueManager:
                 for i, item in enumerate(self.queue):
                     item['queue_position'] = i + 1
                     self.progress_data[item['download_id']]['queue_position'] = i + 1
-                
+                self._save_state()
                 return next_download
         return None
     
@@ -269,7 +311,7 @@ class DownloadQueueManager:
 
 
 # Global download queue manager
-download_queue = DownloadQueueManager(max_concurrent=5)
+download_queue = DownloadQueueManager(max_concurrent=int(os.environ.get("DOWNLOAD_MAX_CONCURRENT", "20")))
 
 
 # Models
@@ -880,3 +922,30 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown():
     client.close()
+
+
+@app.on_event("startup")
+async def startup():
+    await resume_pending_downloads()
+
+
+async def resume_pending_downloads():
+    """Yarım kalan ve kuyrukta bekleyen indirmeleri yeniden başlat."""
+    pending_incomplete = list(download_queue.incomplete_downloads.items())
+    for old_id, info in pending_incomplete:
+        await download_queue.resume_download(old_id)
+
+    await download_queue.prime_queue()
+
+    for download_id, info in list(download_queue.active_downloads.items()):
+        url = info.get('url', '')
+        format_type = info.get('format', 'video')
+        asyncio.create_task(process_youtube_download(download_id, url, format_type))
+
+    for item in list(download_queue.queue):
+        download_id = item.get('download_id')
+        if not download_id:
+            continue
+        url = item.get('url', '')
+        format_type = item.get('format', 'video')
+        asyncio.create_task(wait_and_process_download(download_id, url, format_type))
