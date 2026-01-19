@@ -12,6 +12,19 @@
       "result": {
         "message": "\u0130ndirme ba\u015far\u0131s\u0131z"
       }
+    },
+    "67e22fb1": {
+      "percent": 0,
+      "speed": "",
+      "eta": "Haz\u0131rlan\u0131yor...",
+      "downloaded": "",
+      "total": "",
+      "status": "failed",
+      "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      "title": "Me at the zoo",
+      "result": {
+        "message": "\u0130ndirme ba\u015far\u0131s\u0131z"
+      }
     }
   },
   "incomplete": {}
