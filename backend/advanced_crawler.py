@@ -105,13 +105,19 @@ class AdvancedCrawler:
         self.visited_urls.add(url)
         logger.info(f"Crawling: {url}")
         
-        try:
-            # Sayfaya git
+              # Sayfaya git
             await page.goto(url, wait_until='domcontentloaded', timeout=30000)
             await page.wait_for_timeout(500)  # JS'in yüklenmesini bekle
+            if "vk.com" in url or "vkvideo.ru" in url:
+                await page.wait_for_timeout(1000)
+                try:
+                    await page.wait_for_selector('a[href*="video"], .VideoCard', timeout=1500)
+                except Exception:
+                    pass
             
             # Görselleri topla
             images = await page.evaluate('''() => {
+
                 const imgs = [];
                 document.querySelectorAll('img').forEach(img => {
                     const src = img.src || img.dataset.src || img.dataset.lazy;
@@ -260,7 +266,7 @@ class AdvancedCrawler:
                 });
                 
                 // VK video links
-                document.querySelectorAll('a[href*="vk.com/video"], a[href*="vkvideo"]').forEach(a => {
+                document.querySelectorAll('a[href*="vk.com/video"], a[href*="vkvideo"], a[href*="vkvideo.ru/video"], a[href*="vkvideo.ru/clip"]').forEach(a => {
                     if (!seen.has(a.href)) {
                         seen.add(a.href);
                         vids.push({ url: a.href, type: 'vk' });
@@ -310,13 +316,14 @@ class AdvancedCrawler:
                         # Embed URL'den video ID çıkar
                         import re
                         match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
+                                  if 'vkvideo.ru' in vk_url:
+                        match = re.search(r'(video|clip)(-?\d+_\d+)', vk_url)
                         if match:
-                            vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
+                            vk_url = f"https://vk.com/{match.group(1)}{match.group(2)}"
                     # Geçersiz VK URL'lerini atla (video ID yoksa)
-                    if not re.search(r'video-?\d+_\d+', vk_url):
+                    if not re.search(r'(video|clip)-?\d+_\d+', vk_url):
                         continue
-                    
-                    # Thumbnail varsa ekle
+
                     thumbnail = vid.get('thumbnail', '')
                     self.videos.append(MediaItem(
                         url=vk_url,
