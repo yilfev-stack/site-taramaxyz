@@ -2,10 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for Playwright
+# Install system dependencies for Playwright and yt-dlp
 RUN apt-get update && apt-get install -y \
     gcc \
     wget \
+    curl \
+    unzip \
     gnupg \
     libglib2.0-0 \
     libnss3 \
@@ -28,6 +30,11 @@ RUN apt-get update && apt-get install -y \
     libgtk-3-0 \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Deno (recommended JS runtime for yt-dlp)
+RUN curl -fsSL https://deno.land/x/install/install.sh | sh
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 # Copy requirements and install
 COPY requirements.txt .
