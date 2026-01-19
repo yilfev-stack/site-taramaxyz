@@ -36,11 +36,17 @@ http://localhost:3006
 - TikTok, Twitter, Instagram, Facebook...
 - 1000+ site desteği (yt-dlp)
 
+### 📊 Yeni: İndirme İlerleme Çubuğu ve Kuyruk Sistemi
+- **Maks 5 eşzamanlı indirme** - Daha fazla istenirse sıraya alınır
+- **Gerçek zamanlı ilerleme çubuğu** - Yüzde, hız ve tahmini süre gösterir
+- **Kuyruk durumu** - Kaç indirme aktif, kaç sırada bekliyor
+
 ### 📹 Video İndirme Kullanımı
-1. "▶ YouTube" sekmesine git
+1. "📥 Direkt İndir" sekmesine git
 2. Video URL yapıştır (YouTube, VK, TikTok vs.)
 3. "Kontrol Et" tıkla
 4. "Video İndir" veya "MP3 İndir" seç
+5. İlerleme çubuğu indirme durumunu gösterir
 
 ## Sorun Giderme
 
@@ -49,6 +55,13 @@ http://localhost:3006
 docker-compose down
 docker-compose build --no-cache
 docker-compose up -d
+```
+
+### YouTube indirme hatası?
+YouTube sık sık API'sini günceller. yt-dlp'yi güncelleyin:
+```bash
+docker exec -it website-scanner-backend pip install -U yt-dlp
+docker restart website-scanner-backend
 ```
 
 ### Logları görmek için?

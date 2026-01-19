@@ -33,6 +33,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Update yt-dlp to latest version (YouTube frequently updates their API)
+RUN pip install -U yt-dlp
+
 # Install Playwright browsers
 ENV PLAYWRIGHT_BROWSERS_PATH=/pw-browsers
 RUN playwright install chromium

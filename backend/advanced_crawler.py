@@ -149,29 +149,92 @@ class AdvancedCrawler:
             # Videoları topla
             videos = await page.evaluate('''() => {
                 const vids = [];
-                // Video tags
+                const seen = new Set();
+                
+                // Video tags - src ve data-src kontrol et
                 document.querySelectorAll('video').forEach(v => {
-                    const src = v.src || v.querySelector('source')?.src;
-                    if (src) vids.push({ url: src, type: 'video' });
+                    let src = v.src || v.currentSrc || v.querySelector('source')?.src;
+                    // data-src attribute'ları da kontrol et
+                    if (!src || src.startsWith('blob:')) {
+                        src = v.dataset.src || v.getAttribute('data-src') || v.getAttribute('data-video-src');
+                    }
+                    // source tag'larını kontrol et
+                    if (!src || src.startsWith('blob:')) {
+                        const sources = v.querySelectorAll('source');
+                        for (const s of sources) {
+                            if (s.src && !s.src.startsWith('blob:')) {
+                                src = s.src;
+                                break;
+                            }
+                        }
+                    }
+                    if (src && !src.startsWith('blob:') && !seen.has(src)) {
+                        seen.add(src);
+                        vids.push({ url: src, type: 'video' });
+                    }
                 });
+                
                 // YouTube iframes
                 document.querySelectorAll('iframe').forEach(iframe => {
-                    const src = iframe.src;
-                    if (src && (src.includes('youtube') || src.includes('youtu.be'))) {
-                        vids.push({ url: src, type: 'youtube' });
-                    }
-                    if (src && src.includes('vimeo')) {
-                        vids.push({ url: src, type: 'vimeo' });
+                    const src = iframe.src || iframe.dataset.src;
+                    if (src && !seen.has(src)) {
+                        if (src.includes('youtube') || src.includes('youtu.be')) {
+                            seen.add(src);
+                            vids.push({ url: src, type: 'youtube' });
+                        } else if (src.includes('vimeo')) {
+                            seen.add(src);
+                            vids.push({ url: src, type: 'vimeo' });
+                        } else if (src.includes('vk.com') || src.includes('vkvideo')) {
+                            seen.add(src);
+                            vids.push({ url: src, type: 'vk' });
+                        } else if (src.includes('dailymotion')) {
+                            seen.add(src);
+                            vids.push({ url: src, type: 'dailymotion' });
+                        }
                     }
                 });
+                
                 // YouTube links
                 document.querySelectorAll('a[href*="youtube"], a[href*="youtu.be"]').forEach(a => {
-                    vids.push({ url: a.href, type: 'youtube' });
+                    if (!seen.has(a.href)) {
+                        seen.add(a.href);
+                        vids.push({ url: a.href, type: 'youtube' });
+                    }
                 });
+                
+                // VK video links
+                document.querySelectorAll('a[href*="vk.com/video"], a[href*="vkvideo"]').forEach(a => {
+                    if (!seen.has(a.href)) {
+                        seen.add(a.href);
+                        vids.push({ url: a.href, type: 'vk' });
+                    }
+                });
+                
+                // Genel video linkleri (.mp4, .webm, .avi, .mov)
+                document.querySelectorAll('a[href$=".mp4"], a[href$=".webm"], a[href$=".avi"], a[href$=".mov"], a[href$=".m3u8"]').forEach(a => {
+                    if (!seen.has(a.href)) {
+                        seen.add(a.href);
+                        vids.push({ url: a.href, type: 'video' });
+                    }
+                });
+                
+                // data-video attributes
+                document.querySelectorAll('[data-video], [data-video-url], [data-video-src]').forEach(el => {
+                    const src = el.dataset.video || el.dataset.videoUrl || el.dataset.videoSrc;
+                    if (src && !src.startsWith('blob:') && !seen.has(src)) {
+                        seen.add(src);
+                        vids.push({ url: src, type: 'video' });
+                    }
+                });
+                
                 return vids;
             }''')
             
             for vid in videos:
+                # Blob URL'leri atla
+                if vid['url'].startswith('blob:'):
+                    continue
+                    
                 if vid['type'] == 'youtube':
                     yt_id = self.extract_youtube_id(vid['url'])
                     if yt_id:
@@ -183,11 +246,27 @@ class AdvancedCrawler:
                             page_url=url,
                             downloadable=True
                         ))
+                elif vid['type'] == 'vk':
+                    # VK video URL'ini düzelt
+                    vk_url = vid['url']
+                    if 'video_ext.php' in vk_url or 'embed' in vk_url:
+                        # Embed URL'den video ID çıkar
+                        import re
+                        match = re.search(r'oid=(-?\d+).*id=(\d+)', vk_url)
+                        if match:
+                            vk_url = f"https://vk.com/video{match.group(1)}_{match.group(2)}"
+                    self.videos.append(MediaItem(
+                        url=vk_url,
+                        type='vk',
+                        page_url=url,
+                        downloadable=True
+                    ))
                 else:
                     self.videos.append(MediaItem(
                         url=vid['url'],
-                        type='video',
-                        page_url=url
+                        type=vid.get('type', 'video'),
+                        page_url=url,
+                        downloadable=True
                     ))
             
             # Metinleri topla
@@ -377,6 +456,92 @@ class YouTubeDownloader:
                 }],
                 'quiet': True,
             }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                return os.path.join(self.download_dir, f"{info['title']}.mp3")
+                
+        except Exception as e:
+            logger.error(f"Error downloading audio: {e}")
+            return None
+
+
+class YouTubeDownloaderWithProgress:
+    """yt-dlp ile YouTube video indirici - Progress tracking ile"""
+    
+    def __init__(self, download_dir: str = "./downloads", progress_hook=None):
+        self.download_dir = download_dir
+        self.progress_hook = progress_hook
+        os.makedirs(download_dir, exist_ok=True)
+    
+    def get_video_info(self, url: str) -> Optional[Dict]:
+        """Video bilgilerini al"""
+        try:
+            ydl_opts = {'quiet': True, 'no_warnings': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return {
+                    'title': info.get('title', ''),
+                    'duration': info.get('duration', 0),
+                    'thumbnail': info.get('thumbnail', ''),
+                    'description': info.get('description', '')[:200] if info.get('description') else '',
+                    'view_count': info.get('view_count', 0),
+                    'uploader': info.get('uploader', '')
+                }
+        except Exception as e:
+            logger.error(f"Error getting video info: {e}")
+            return None
+    
+    def download_video(self, url: str, quality: str = 'best') -> Optional[str]:
+        """Video indir - Progress tracking ile"""
+        try:
+            ydl_opts = {
+                'format': 'best[height<=720]' if quality == 'medium' else 'best',
+                'outtmpl': os.path.join(self.download_dir, '%(title)s.%(ext)s'),
+                'quiet': True,
+                'no_warnings': True,
+                'continuedl': True,  # Yarım kalan indirmeleri devam ettir
+                'nopart': False,  # .part dosyaları kullan
+            }
+            
+            # Progress hook ekle
+            if self.progress_hook:
+                ydl_opts['progress_hooks'] = [self.progress_hook]
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                logger.info(f"Downloaded: {filename}")
+                return filename
+                
+        except Exception as e:
+            logger.error(f"Error downloading video: {e}")
+            return None
+    
+    def download_audio(self, url: str) -> Optional[str]:
+        """Sadece ses indir (MP3) - Progress tracking ve hız optimizasyonu ile"""
+        try:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(self.download_dir, '%(title)s.%(ext)s'),
+                'quiet': False,
+                'no_warnings': True,
+                'noprogress': False,
+                # Hız optimizasyonları
+                'concurrent_fragment_downloads': 4,
+                'buffersize': 1024 * 16,
+                'retries': 10,
+                'continuedl': True,
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+            }
+            
+            # Progress hook ekle
+            if self.progress_hook:
+                ydl_opts['progress_hooks'] = [self.progress_hook]
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import "@/App.css";
 import axios from "axios";
 
@@ -49,6 +49,173 @@ const ProgressBar = ({ progress, status }) => {
   );
 };
 
+// Download Progress Bar Component
+const DownloadProgressBar = ({ downloadId, progress, onComplete }) => {
+  const getStatusColor = () => {
+    switch (progress?.status) {
+      case 'completed': return 'bg-green-500';
+      case 'failed': return 'bg-red-500';
+      case 'queued': return 'bg-yellow-500';
+      case 'processing': return 'bg-blue-400';
+      default: return 'bg-blue-500';
+    }
+  };
+
+  const getStatusText = () => {
+    switch (progress?.status) {
+      case 'queued': return `Sırada bekliyor (#${progress.queue_position || '?'})`;
+      case 'starting': return 'Başlatılıyor...';
+      case 'downloading': return `İndiriliyor... ${progress.speed || ''}`;
+      case 'processing': return 'İşleniyor...';
+      case 'completed': return 'Tamamlandı!';
+      case 'failed': return 'Başarısız';
+      default: return 'Hazırlanıyor...';
+    }
+  };
+
+  useEffect(() => {
+    if (progress?.status === 'completed' && progress?.result?.download_url) {
+      // Otomatik indirme başlat
+      window.open(`${API}${progress.result.download_url.replace('/api', '')}`, "_blank");
+      if (onComplete) onComplete(downloadId, progress.result);
+    }
+  }, [progress?.status, progress?.result, downloadId, onComplete]);
+
+  return (
+    <div className="bg-gray-700 rounded-lg p-3 mb-2">
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-sm text-gray-300 truncate flex-1 mr-2">
+          {progress?.result?.title || downloadId}
+        </span>
+        <span className="text-xs text-gray-400 whitespace-nowrap">
+          {progress?.downloaded && progress?.total ? `${progress.downloaded} / ${progress.total}` : ''}
+          {progress?.eta ? ` • ${progress.eta}` : ''}
+        </span>
+      </div>
+      <div className="w-full bg-gray-600 rounded-full h-2.5">
+        <div
+          className={`h-2.5 rounded-full transition-all duration-300 ${getStatusColor()}`}
+          style={{ width: `${Math.min(progress?.percent || 0, 100)}%` }}
+        />
+      </div>
+      <div className="flex justify-between mt-1">
+        <span className="text-xs text-gray-400">{getStatusText()}</span>
+        <span className="text-xs text-gray-400">{Math.round(progress?.percent || 0)}%</span>
+      </div>
+    </div>
+  );
+};
+
+// Download Queue Status Component
+const DownloadQueueStatus = ({ queueStatus, onClear, onResume, onDeleteIncomplete }) => {
+  const hasActiveDownloads = queueStatus && Object.keys(queueStatus.progress || {}).length > 0;
+  const hasIncomplete = queueStatus && Object.keys(queueStatus.incomplete || {}).length > 0;
+  
+  if (!hasActiveDownloads && !hasIncomplete) {
+    return null;
+  }
+
+  return (
+    <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+          <span>📊</span> İndirme Durumu
+          <span className="bg-blue-600 text-xs px-2 py-0.5 rounded-full">
+            {queueStatus.active_count}/{queueStatus.max_concurrent} aktif
+          </span>
+          {queueStatus.queue_count > 0 && (
+            <span className="bg-yellow-600 text-xs px-2 py-0.5 rounded-full">
+              {queueStatus.queue_count} sırada
+            </span>
+          )}
+        </h4>
+        {Object.keys(queueStatus.progress || {}).length > 0 && (
+          <button
+            onClick={onClear}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            Temizle
+          </button>
+        )}
+      </div>
+      
+      {/* Aktif İndirmeler */}
+      {hasActiveDownloads && (
+        <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
+          {Object.entries(queueStatus.progress || {}).map(([id, prog]) => (
+            <div key={id} className="bg-gray-700 rounded-lg p-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-gray-300 truncate flex-1 mr-2">
+                  {prog?.title || prog?.url || id}
+                </span>
+                <span className="text-xs text-gray-400 whitespace-nowrap">
+                  {prog?.downloaded && prog?.total ? `${prog.downloaded} / ${prog.total}` : ''}
+                  {prog?.eta ? ` • ${prog.eta}` : ''}
+                </span>
+              </div>
+              <div className="w-full bg-gray-600 rounded-full h-2.5">
+                <div
+                  className={`h-2.5 rounded-full transition-all duration-300 ${
+                    prog?.status === 'completed' ? 'bg-green-500' :
+                    prog?.status === 'failed' ? 'bg-red-500' :
+                    prog?.status === 'queued' ? 'bg-yellow-500' :
+                    prog?.status === 'processing' ? 'bg-purple-500' : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${Math.min(prog?.percent || 0, 100)}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-xs text-gray-400">
+                  {prog?.status === 'queued' ? `Sırada (#${prog?.queue_position || '?'})` :
+                   prog?.status === 'starting' ? 'Başlatılıyor...' :
+                   prog?.status === 'downloading' ? `İndiriliyor... ${prog?.speed || ''}` :
+                   prog?.status === 'processing' ? 'İşleniyor...' :
+                   prog?.status === 'completed' ? 'Tamamlandı!' :
+                   prog?.status === 'failed' ? 'Başarısız' : 'Hazırlanıyor...'}
+                </span>
+                <span className="text-xs text-gray-400">{Math.round(prog?.percent || 0)}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      
+      {/* Yarım Kalan İndirmeler */}
+      {hasIncomplete && (
+        <div className="border-t border-gray-600 pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <h5 className="text-xs font-semibold text-orange-400 flex items-center gap-1">
+              <span>⏸️</span> Yarım Kalan İndirmeler
+            </h5>
+          </div>
+          <div className="space-y-2 max-h-32 overflow-y-auto">
+            {Object.entries(queueStatus.incomplete || {}).map(([id, item]) => (
+              <div key={id} className="bg-gray-700/50 rounded-lg p-2 flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-gray-300 truncate">{item.title || item.url}</p>
+                  <p className="text-xs text-gray-500">%{item.percent || 0} tamamlandı</p>
+                </div>
+                <button
+                  onClick={() => onResume(id)}
+                  className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs font-semibold flex items-center gap-1"
+                >
+                  ▶️ Devam
+                </button>
+                <button
+                  onClick={() => onDeleteIncomplete(id)}
+                  className="bg-red-600/50 hover:bg-red-600 text-white px-2 py-1 rounded text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Image Card
 const ImageCard = ({ image, selected, onToggle }) => (
   <div
@@ -71,48 +238,72 @@ const ImageCard = ({ image, selected, onToggle }) => (
   </div>
 );
 
-// YouTube Card
-const YouTubeCard = ({ video, onDownload, downloading }) => (
-  <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
-    <div className="relative">
-      <img
-        src={video.thumbnail}
-        alt={video.title}
-        className="w-full h-40 object-cover"
-        onError={(e) => { e.target.src = "https://via.placeholder.com/300x200?text=YouTube"; }}
-      />
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-6xl opacity-80">▶</span>
+// YouTube Card with Progress
+const YouTubeCard = ({ video, onDownload, downloadProgress, isDownloading }) => {
+  const hasProgress = downloadProgress && downloadProgress.status !== 'completed';
+  
+  return (
+    <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
+      <div className="relative">
+        <img
+          src={video.thumbnail}
+          alt={video.title}
+          className="w-full h-40 object-cover"
+          onError={(e) => { e.target.src = "https://via.placeholder.com/300x200?text=YouTube"; }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-6xl opacity-80">▶</span>
+        </div>
+      </div>
+      <div className="p-3">
+        <p className="text-sm text-gray-300 truncate mb-2">{video.title || video.url}</p>
+        
+        {hasProgress ? (
+          <div className="space-y-2">
+            <div className="w-full bg-gray-600 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  downloadProgress.status === 'queued' ? 'bg-yellow-500' : 'bg-blue-500'
+                }`}
+                style={{ width: `${downloadProgress.percent || 0}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-400 text-center">
+              {downloadProgress.status === 'queued' 
+                ? `Sırada (#${downloadProgress.queue_position})` 
+                : `${Math.round(downloadProgress.percent || 0)}% ${downloadProgress.speed || ''}`}
+            </p>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={() => onDownload(video.url, "video")}
+              disabled={isDownloading}
+              className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white px-2 py-1.5 rounded text-xs font-semibold"
+            >
+              {isDownloading ? "⏳" : "📹"} Video
+            </button>
+            <button
+              onClick={() => onDownload(video.url, "audio")}
+              disabled={isDownloading}
+              className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-2 py-1.5 rounded text-xs font-semibold"
+            >
+              {isDownloading ? "⏳" : "🎵"} MP3
+            </button>
+          </div>
+        )}
       </div>
     </div>
-    <div className="p-3">
-      <p className="text-sm text-gray-300 truncate mb-2">{video.title || video.url}</p>
-      <div className="flex gap-2">
-        <button
-          onClick={() => onDownload(video.url, "video")}
-          disabled={downloading}
-          className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white px-2 py-1.5 rounded text-xs font-semibold"
-        >
-          {downloading ? "⏳" : "📹"} Video
-        </button>
-        <button
-          onClick={() => onDownload(video.url, "audio")}
-          disabled={downloading}
-          className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-2 py-1.5 rounded text-xs font-semibold"
-        >
-          {downloading ? "⏳" : "🎵"} MP3
-        </button>
-      </div>
-    </div>
-  </div>
-);
+  );
+};
 
-// Direct Video Downloader Component
-const DirectVideoDownloader = ({ onDownloadComplete }) => {
+// Direct Video Downloader Component with Progress
+const DirectVideoDownloader = ({ queueStatus, onQueueUpdate }) => {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [videoInfo, setVideoInfo] = useState(null);
-  const [downloading, setDownloading] = useState(false);
+  const [activeDownloads, setActiveDownloads] = useState({});
+  const pollIntervalRef = useRef(null);
 
   const checkVideo = async () => {
     if (!url) return;
@@ -131,29 +322,104 @@ const DirectVideoDownloader = ({ onDownloadComplete }) => {
     setLoading(false);
   };
 
+  // Polling for download progress
+  useEffect(() => {
+    const pollProgress = async () => {
+      if (Object.keys(activeDownloads).length === 0) return;
+      
+      try {
+        const res = await axios.get(`${API}/download/queue-status`);
+        if (res.data && res.data.progress) {
+          // Update active downloads with new progress
+          const newActiveDownloads = { ...activeDownloads };
+          let hasChanges = false;
+          
+          for (const [downloadId, info] of Object.entries(activeDownloads)) {
+            const progress = res.data.progress[downloadId];
+            if (progress) {
+              newActiveDownloads[downloadId] = { ...info, progress };
+              hasChanges = true;
+              
+              // Check if completed
+              if (progress.status === 'completed' && progress.result?.download_url) {
+                window.open(`${API}${progress.result.download_url.replace('/api', '')}`, "_blank");
+                delete newActiveDownloads[downloadId];
+              } else if (progress.status === 'failed') {
+                alert(`İndirme başarısız: ${progress.result?.message || 'Bilinmeyen hata'}`);
+                delete newActiveDownloads[downloadId];
+              }
+            }
+          }
+          
+          if (hasChanges) {
+            setActiveDownloads(newActiveDownloads);
+          }
+          
+          if (onQueueUpdate) {
+            onQueueUpdate(res.data);
+          }
+        }
+      } catch (e) {
+        console.error('Progress poll error:', e);
+      }
+    };
+
+    if (Object.keys(activeDownloads).length > 0) {
+      pollIntervalRef.current = setInterval(pollProgress, 1000);
+      return () => clearInterval(pollIntervalRef.current);
+    }
+  }, [activeDownloads, onQueueUpdate]);
+
   const downloadVideo = async (format) => {
-    setDownloading(true);
     try {
       const res = await axios.post(`${API}/download/video`, { url, format });
       if (res.data.success) {
-        window.open(`${API}/download/youtube-file/${res.data.filename}`, "_blank");
-        alert(`İndirildi: ${res.data.title}`);
-        if (onDownloadComplete) onDownloadComplete();
+        // Add to active downloads
+        setActiveDownloads(prev => ({
+          ...prev,
+          [res.data.download_id]: {
+            url,
+            format,
+            title: videoInfo?.title || url,
+            status: res.data.status,
+            queue_position: res.data.queue_position,
+            progress: { percent: 0, status: res.data.status }
+          }
+        }));
+        
+        if (res.data.status === 'queued') {
+          // Show queue message
+        }
       } else {
         alert("İndirme başarısız: " + res.data.message);
       }
     } catch (e) {
       alert("Hata: " + e.message);
     }
-    setDownloading(false);
   };
+
+  const hasActiveDownloads = Object.keys(activeDownloads).length > 0;
 
   return (
     <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-      <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-        <span>🎬</span> Video İndir
-        <span className="text-xs text-gray-500 font-normal">(YouTube, VK, TikTok, Twitter, Instagram...)</span>
-      </h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold flex items-center gap-2">
+          <span>🎬</span> Video İndir
+          <span className="text-xs text-gray-500 font-normal">(YouTube, VK, TikTok, Twitter, Instagram...)</span>
+        </h3>
+        {queueStatus && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="bg-blue-600 px-2 py-1 rounded-full">
+              {queueStatus.active_count}/{queueStatus.max_concurrent} aktif
+            </span>
+            {queueStatus.queue_count > 0 && (
+              <span className="bg-yellow-600 px-2 py-1 rounded-full">
+                {queueStatus.queue_count} sırada
+              </span>
+            )}
+          </div>
+        )}
+      </div>
       
       <div className="flex gap-3 mb-4">
         <input
@@ -172,6 +438,46 @@ const DirectVideoDownloader = ({ onDownloadComplete }) => {
         </button>
       </div>
 
+      {/* Active Downloads Progress */}
+      {hasActiveDownloads && (
+        <div className="mb-4 space-y-2">
+          <p className="text-sm text-gray-400 mb-2">📥 Aktif İndirmeler:</p>
+          {Object.entries(activeDownloads).map(([id, download]) => (
+            <div key={id} className="bg-gray-700 rounded-lg p-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-gray-300 truncate flex-1 mr-2">
+                  {download.title}
+                </span>
+                <span className="text-xs text-gray-400">
+                  {download.progress?.status === 'queued' 
+                    ? `Sırada (#${download.progress?.queue_position || download.queue_position})` 
+                    : download.progress?.speed || ''}
+                </span>
+              </div>
+              <div className="w-full bg-gray-600 rounded-full h-2.5">
+                <div
+                  className={`h-2.5 rounded-full transition-all duration-300 ${
+                    download.progress?.status === 'queued' ? 'bg-yellow-500' :
+                    download.progress?.status === 'completed' ? 'bg-green-500' :
+                    download.progress?.status === 'failed' ? 'bg-red-500' : 'bg-blue-500'
+                  }`}
+                  style={{ width: `${download.progress?.percent || 0}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-xs text-gray-400">
+                  {download.progress?.status === 'downloading' ? 'İndiriliyor...' :
+                   download.progress?.status === 'processing' ? 'İşleniyor...' :
+                   download.progress?.status === 'queued' ? 'Beklemede' :
+                   download.progress?.status === 'starting' ? 'Başlatılıyor...' : ''}
+                </span>
+                <span className="text-xs text-gray-400">{Math.round(download.progress?.percent || 0)}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {videoInfo && (
         <div className="bg-gray-700 rounded-lg p-4">
           <div className="flex gap-4">
@@ -189,17 +495,17 @@ const DirectVideoDownloader = ({ onDownloadComplete }) => {
           <div className="flex gap-3 mt-4">
             <button
               onClick={() => downloadVideo("video")}
-              disabled={downloading}
+              disabled={queueStatus && queueStatus.active_count >= queueStatus.max_concurrent && queueStatus.queue_count >= 10}
               className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold"
             >
-              {downloading ? "⏳ İndiriliyor..." : "📹 Video İndir"}
+              📹 Video İndir
             </button>
             <button
               onClick={() => downloadVideo("audio")}
-              disabled={downloading}
+              disabled={queueStatus && queueStatus.active_count >= queueStatus.max_concurrent && queueStatus.queue_count >= 10}
               className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold"
             >
-              {downloading ? "⏳ İndiriliyor..." : "🎵 MP3 İndir"}
+              🎵 MP3 İndir
             </button>
           </div>
         </div>
@@ -319,9 +625,12 @@ function App() {
   const [issues, setIssues] = useState([]);
   const [selectedImages, setSelectedImages] = useState(new Set());
   const [selectedTexts, setSelectedTexts] = useState(new Set());
+  const [selectedVideos, setSelectedVideos] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [ytDownloading, setYtDownloading] = useState(false);
+  const [downloadQueue, setDownloadQueue] = useState(null);
+  const [videoDownloadProgress, setVideoDownloadProgress] = useState({});
 
   // Fetch functions
   const fetchStatus = useCallback(async () => {
@@ -375,6 +684,7 @@ function App() {
     setLoading(true);
     setSelectedImages(new Set());
     setSelectedTexts(new Set());
+    setSelectedVideos(new Set());
     
     try {
       await axios.post(`${API}/crawl/start`, { target_url: targetUrl, max_pages: maxPages });
@@ -411,21 +721,119 @@ function App() {
     setDownloading(false);
   };
 
-  // Download YouTube
+  // Download YouTube with queue system
   const downloadYouTube = async (url, format) => {
-    setYtDownloading(true);
     try {
       const res = await axios.post(`${API}/download/youtube`, { url, format });
       if (res.data.success) {
-        window.open(`${API}/download/youtube-file/${res.data.filename}`, "_blank");
-        alert(`İndirildi: ${res.data.title}`);
+        // Track this download
+        setVideoDownloadProgress(prev => ({
+          ...prev,
+          [res.data.download_id]: {
+            status: res.data.status,
+            queue_position: res.data.queue_position,
+            percent: 0,
+            url
+          }
+        }));
       } else {
         alert("İndirme başarısız: " + res.data.message);
       }
     } catch (e) {
       alert("Hata: " + e.message);
     }
-    setYtDownloading(false);
+  };
+
+  // Fetch download queue status
+  const fetchDownloadQueue = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/download/queue-status`);
+      setDownloadQueue(res.data);
+      
+      // Update video download progress
+      if (res.data.progress) {
+        setVideoDownloadProgress(prev => {
+          const updated = { ...prev };
+          for (const [id, prog] of Object.entries(res.data.progress)) {
+            if (updated[id]) {
+              updated[id] = { ...updated[id], ...prog };
+              
+              // Auto-download completed files
+              if (prog.status === 'completed' && prog.result?.download_url) {
+                window.open(`${API}${prog.result.download_url.replace('/api', '')}`, "_blank");
+                delete updated[id];
+              } else if (prog.status === 'failed') {
+                delete updated[id];
+              }
+            }
+          }
+          return updated;
+        });
+      }
+    } catch (e) { console.error(e); }
+  }, []);
+
+  // Clear completed downloads
+  const clearCompletedDownloads = async () => {
+    try {
+      await axios.post(`${API}/download/clear-completed`);
+      setDownloadQueue(prev => prev ? { ...prev, progress: {} } : null);
+    } catch (e) { console.error(e); }
+  };
+
+  // Resume incomplete download
+  const resumeIncompleteDownload = async (downloadId) => {
+    try {
+      const res = await axios.post(`${API}/download/resume/${downloadId}`);
+      if (res.data.success) {
+        fetchDownloadQueue(); // Refresh queue status
+      } else {
+        alert("Devam ettirilemedi: " + res.data.message);
+      }
+    } catch (e) {
+      alert("Hata: " + e.message);
+    }
+  };
+
+  // Delete incomplete download
+  const deleteIncompleteDownload = async (downloadId) => {
+    try {
+      await axios.delete(`${API}/download/incomplete/${downloadId}`);
+      fetchDownloadQueue(); // Refresh queue status
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Download selected videos (bulk)
+  const downloadSelectedVideos = async () => {
+    if (selectedVideos.size === 0) {
+      alert("Video seçin!");
+      return;
+    }
+    
+    // Her video için indirme başlat
+    for (const videoUrl of selectedVideos) {
+      try {
+        const res = await axios.post(`${API}/download/video`, { url: videoUrl, format: 'video' });
+        if (res.data.success) {
+          setVideoDownloadProgress(prev => ({
+            ...prev,
+            [res.data.download_id]: {
+              status: res.data.status,
+              queue_position: res.data.queue_position,
+              percent: 0,
+              url: videoUrl
+            }
+          }));
+        }
+      } catch (e) {
+        console.error('Video download error:', e);
+      }
+    }
+    
+    setSelectedVideos(new Set());
+    alert(`${selectedVideos.size} video indirme sırasına eklendi!`);
   };
 
   // Copy texts
@@ -450,6 +858,13 @@ function App() {
     const interval = setInterval(fetchStatus, 2000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
+
+  // Download queue polling
+  useEffect(() => {
+    fetchDownloadQueue();
+    const interval = setInterval(fetchDownloadQueue, 1500);
+    return () => clearInterval(interval);
+  }, [fetchDownloadQueue]);
 
   useEffect(() => {
     if (crawlStatus.status === "completed") {
@@ -579,10 +994,18 @@ function App() {
           <div className="space-y-6">
             <div className="text-center mb-6">
               <h2 className="text-2xl font-bold text-white mb-2">🚀 Direkt İndir</h2>
-              <p className="text-gray-400">Site taramadan direkt link yapıştırıp indir</p>
+              <p className="text-gray-400">Site taramadan direkt link yapıştırıp indir • Maks 5 eşzamanlı indirme</p>
             </div>
             
-            <DirectVideoDownloader />
+            {/* Download Queue Status */}
+            <DownloadQueueStatus 
+              queueStatus={downloadQueue} 
+              onClear={clearCompletedDownloads}
+              onResume={resumeIncompleteDownload}
+              onDeleteIncomplete={deleteIncompleteDownload}
+            />
+            
+            <DirectVideoDownloader queueStatus={downloadQueue} onQueueUpdate={setDownloadQueue} />
             <DirectImageDownloader />
             
             <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
@@ -645,12 +1068,20 @@ function App() {
         {/* YouTube */}
         {activeTab === "youtube" && (
           <div className="space-y-4">
+            {/* Download Queue Status */}
+            <DownloadQueueStatus 
+              queueStatus={downloadQueue} 
+              onClear={clearCompletedDownloads}
+              onResume={resumeIncompleteDownload}
+              onDeleteIncomplete={deleteIncompleteDownload}
+            />
+            
             {/* Direct Video Downloader */}
-            <DirectVideoDownloader />
+            <DirectVideoDownloader queueStatus={downloadQueue} onQueueUpdate={setDownloadQueue} />
             
             <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-4 mb-4">
               <p className="text-yellow-400 font-semibold">⚠️ Video İndirme</p>
-              <p className="text-yellow-200 text-sm mt-1">Kişisel kullanım için. Ticari kullanım ve dağıtım yasaktır.</p>
+              <p className="text-yellow-200 text-sm mt-1">Kişisel kullanım için. Ticari kullanım ve dağıtım yasaktır. Maks 5 eşzamanlı indirme.</p>
             </div>
             
             {(videos.youtube && videos.youtube.length > 0) && (
@@ -658,7 +1089,13 @@ function App() {
                 <h3 className="text-lg font-semibold text-gray-300">Sitede Bulunan YouTube Videoları</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {videos.youtube.map((video, i) => (
-                    <YouTubeCard key={i} video={video} onDownload={downloadYouTube} downloading={ytDownloading} />
+                    <YouTubeCard 
+                      key={i} 
+                      video={video} 
+                      onDownload={downloadYouTube} 
+                      downloadProgress={videoDownloadProgress[video.url]}
+                      isDownloading={Object.keys(videoDownloadProgress).length >= 5}
+                    />
                   ))}
                 </div>
               </>
@@ -676,22 +1113,87 @@ function App() {
         {/* Videos */}
         {activeTab === "videos" && (
           <div className="space-y-4">
-            {(videos.videos || []).map((video, i) => (
-              <div key={i} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            {/* Download Queue Status */}
+            <DownloadQueueStatus 
+              queueStatus={downloadQueue} 
+              onClear={clearCompletedDownloads}
+              onResume={resumeIncompleteDownload}
+              onDeleteIncomplete={deleteIncompleteDownload}
+            />
+            
+            {/* Selection toolbar */}
+            {(videos.videos || []).length > 0 && (
+              <div className="flex items-center justify-between bg-gray-800 rounded-lg p-4 border border-gray-700">
                 <div className="flex items-center gap-4">
-                  <span className="text-3xl">🎬</span>
-                  <div className="flex-1">
+                  <span className="text-gray-400">{selectedVideos.size} video seçili</span>
+                  <button
+                    onClick={() => {
+                      if (selectedVideos.size === (videos.videos || []).length) {
+                        setSelectedVideos(new Set());
+                      } else {
+                        setSelectedVideos(new Set((videos.videos || []).map(v => v.url)));
+                      }
+                    }}
+                    className="text-sm text-blue-400 hover:text-blue-300"
+                  >
+                    {selectedVideos.size === (videos.videos || []).length ? "Tümünü Kaldır" : "Tümünü Seç"}
+                  </button>
+                </div>
+                <button
+                  onClick={downloadSelectedVideos}
+                  disabled={selectedVideos.size === 0}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2"
+                >
+                  📥 Seçilenleri İndir ({selectedVideos.size})
+                </button>
+              </div>
+            )}
+            
+            {/* Video list */}
+            {(videos.videos || []).map((video, i) => (
+              <div 
+                key={i} 
+                className={`bg-gray-800 rounded-lg p-4 border-2 cursor-pointer transition-all ${
+                  selectedVideos.has(video.url) ? "border-green-500 ring-2 ring-green-500" : "border-gray-700 hover:border-gray-500"
+                }`}
+                onClick={() => {
+                  const newSet = new Set(selectedVideos);
+                  if (newSet.has(video.url)) {
+                    newSet.delete(video.url);
+                  } else {
+                    newSet.add(video.url);
+                  }
+                  setSelectedVideos(newSet);
+                }}
+              >
+                <div className="flex items-center gap-4">
+                  <span className={`text-3xl ${selectedVideos.has(video.url) ? "text-green-400" : ""}`}>
+                    {selectedVideos.has(video.url) ? "✓" : "🎬"}
+                  </span>
+                  <div className="flex-1 min-w-0">
                     <p className="text-gray-300 truncate">{video.url}</p>
                     <p className="text-gray-500 text-sm">{video.type}</p>
                   </div>
-                  <a
-                    href={video.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
-                  >
-                    Aç
-                  </a>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadYouTube(video.url, 'video');
+                      }}
+                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm"
+                    >
+                      📥 İndir
+                    </button>
+                    <a
+                      href={video.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm"
+                    >
+                      🔗 Aç
+                    </a>
+                  </div>
                 </div>
               </div>
             ))}

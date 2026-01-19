@@ -18,9 +18,11 @@ import aiohttp
 import aiofiles
 import zipfile
 import shutil
+from collections import deque
+import threading
 
 # Gelişmiş crawler
-from advanced_crawler import AdvancedCrawler, YouTubeDownloader, report_to_dict
+from advanced_crawler import AdvancedCrawler, YouTubeDownloaderWithProgress, report_to_dict
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -50,6 +52,226 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# ===== İndirme Sıra Yönetimi (Max 5 eşzamanlı) =====
+# İndirme durumunu dosyaya kaydet
+DOWNLOAD_STATE_FILE = ROOT_DIR / 'download_state.json'
+
+class DownloadQueueManager:
+    """Video indirme sıra yöneticisi - Maks 5 eşzamanlı indirme, kalıcı durum"""
+    
+    def __init__(self, max_concurrent: int = 5):
+        self.max_concurrent = max_concurrent
+        self.active_downloads: Dict[str, Dict] = {}  # download_id -> info
+        self.queue: deque = deque()  # Bekleyen indirmeler
+        self.lock = asyncio.Lock()
+        self.progress_data: Dict[str, Dict] = {}  # download_id -> progress
+        self.incomplete_downloads: Dict[str, Dict] = {}  # Yarım kalan indirmeler
+        self._load_state()
+    
+    def _load_state(self):
+        """Kayıtlı durumu yükle"""
+        try:
+            if DOWNLOAD_STATE_FILE.exists():
+                with open(DOWNLOAD_STATE_FILE, 'r') as f:
+                    data = json.load(f)
+                    self.incomplete_downloads = data.get('incomplete', {})
+                    # Eski aktif indirmeleri yarım kalan olarak işaretle
+                    for did, info in data.get('active', {}).items():
+                        if info.get('status') not in ['completed', 'failed']:
+                            info['status'] = 'interrupted'
+                            self.incomplete_downloads[did] = info
+                    logger.info(f"Loaded {len(self.incomplete_downloads)} incomplete downloads")
+        except Exception as e:
+            logger.error(f"Error loading download state: {e}")
+    
+    def _save_state(self):
+        """Durumu dosyaya kaydet"""
+        try:
+            data = {
+                'active': {k: v for k, v in self.progress_data.items() if v.get('status') not in ['completed']},
+                'incomplete': self.incomplete_downloads
+            }
+            with open(DOWNLOAD_STATE_FILE, 'w') as f:
+                json.dump(data, f, indent=2, default=str)
+        except Exception as e:
+            logger.error(f"Error saving download state: {e}")
+    
+    def get_status(self) -> Dict:
+        """Kuyruk durumunu döndür - sayfa yenilenince de görünsün"""
+        # Progress data'dan aktif olanları filtrele
+        active_progress = {}
+        for did, prog in self.progress_data.items():
+            if prog.get('status') not in ['completed', 'failed']:
+                active_progress[did] = prog
+        
+        return {
+            "active_count": len(self.active_downloads),
+            "queue_count": len(self.queue),
+            "max_concurrent": self.max_concurrent,
+            "active_downloads": list(self.active_downloads.values()),
+            "queued_downloads": list(self.queue),
+            "progress": active_progress,  # Aktif indirmeler
+            "incomplete": self.incomplete_downloads  # Yarım kalan indirmeler
+        }
+    
+    def get_download_progress(self, download_id: str) -> Optional[Dict]:
+        """Tek bir indirmenin ilerlemesini döndür"""
+        return self.progress_data.get(download_id)
+    
+    def update_progress(self, download_id: str, progress: Dict):
+        """İlerleme bilgisini güncelle - mevcut verileri koru ve kaydet"""
+        if download_id in self.progress_data:
+            # Mevcut verileri koru, yenilerini üzerine yaz
+            current = self.progress_data[download_id]
+            current.update(progress)
+        else:
+            self.progress_data[download_id] = progress
+        # Her güncellenmede durumu kaydet
+        self._save_state()
+    
+    async def can_start_download(self) -> bool:
+        """Yeni indirme başlatılabilir mi?"""
+        async with self.lock:
+            return len(self.active_downloads) < self.max_concurrent
+    
+    async def add_to_queue(self, download_info: Dict) -> str:
+        """Sıraya ekle veya hemen başlat"""
+        download_id = str(uuid.uuid4())[:8]
+        download_info['download_id'] = download_id
+        download_info['status'] = 'queued'
+        download_info['created_at'] = datetime.now(timezone.utc).isoformat()
+        download_info['progress'] = 0
+        
+        async with self.lock:
+            if len(self.active_downloads) < self.max_concurrent:
+                download_info['status'] = 'starting'
+                self.active_downloads[download_id] = download_info
+                self.progress_data[download_id] = {
+                    'percent': 0,
+                    'speed': '',
+                    'eta': '',
+                    'downloaded': '',
+                    'total': '',
+                    'status': 'starting',
+                    'url': download_info.get('url', ''),
+                    'title': download_info.get('url', '')  # Başlangıçta URL, sonra title ile güncellenir
+                }
+            else:
+                download_info['status'] = 'queued'
+                download_info['queue_position'] = len(self.queue) + 1
+                self.queue.append(download_info)
+                self.progress_data[download_id] = {
+                    'percent': 0,
+                    'status': 'queued',
+                    'queue_position': len(self.queue),
+                    'url': download_info.get('url', ''),
+                    'title': download_info.get('url', '')
+                }
+        
+        return download_id
+    
+    async def start_download(self, download_id: str):
+        """İndirmeyi başlat olarak işaretle"""
+        async with self.lock:
+            if download_id in self.active_downloads:
+                self.active_downloads[download_id]['status'] = 'downloading'
+                if download_id in self.progress_data:
+                    self.progress_data[download_id]['status'] = 'downloading'
+    
+    async def complete_download(self, download_id: str, success: bool = True, result: Dict = None):
+        """İndirmeyi tamamla ve sıradaki başlat"""
+        async with self.lock:
+            download_info = self.active_downloads.get(download_id, {})
+            
+            if download_id in self.active_downloads:
+                del self.active_downloads[download_id]
+            
+            # Sonucu kaydet
+            if download_id in self.progress_data:
+                prog = self.progress_data[download_id]
+                prog['status'] = 'completed' if success else 'failed'
+                prog['percent'] = 100 if success else prog.get('percent', 0)
+                if result:
+                    prog['result'] = result
+                
+                # Başarısız ve ilerleme varsa yarım kalan olarak kaydet
+                if not success and prog.get('percent', 0) > 0:
+                    self.incomplete_downloads[download_id] = {
+                        'url': prog.get('url', download_info.get('url', '')),
+                        'title': prog.get('title', ''),
+                        'percent': prog.get('percent', 0),
+                        'format': download_info.get('format', 'video'),
+                        'status': 'interrupted',
+                        'created_at': download_info.get('created_at', datetime.now(timezone.utc).isoformat())
+                    }
+            
+            # Durumu kaydet
+            self._save_state()
+            
+            # Sıradaki indirmeyi başlat
+            if self.queue and len(self.active_downloads) < self.max_concurrent:
+                next_download = self.queue.popleft()
+                next_id = next_download['download_id']
+                next_download['status'] = 'starting'
+                self.active_downloads[next_id] = next_download
+                self.progress_data[next_id] = {
+                    'percent': 0,
+                    'status': 'starting',
+                    'url': next_download.get('url', ''),
+                    'title': next_download.get('url', '')
+                }
+                # Sıra pozisyonlarını güncelle
+                for i, item in enumerate(self.queue):
+                    item['queue_position'] = i + 1
+                    self.progress_data[item['download_id']]['queue_position'] = i + 1
+                
+                return next_download
+        return None
+    
+    def clear_completed(self):
+        """Tamamlanan indirmelerin progress datasını temizle"""
+        to_remove = []
+        for did, prog in self.progress_data.items():
+            if prog.get('status') in ['completed', 'failed']:
+                to_remove.append(did)
+        for did in to_remove:
+            del self.progress_data[did]
+        self._save_state()
+    
+    def clear_incomplete(self, download_id: str = None):
+        """Yarım kalan indirmeyi temizle"""
+        if download_id:
+            if download_id in self.incomplete_downloads:
+                del self.incomplete_downloads[download_id]
+        else:
+            self.incomplete_downloads.clear()
+        self._save_state()
+    
+    async def resume_download(self, download_id: str) -> Optional[str]:
+        """Yarım kalan indirmeyi devam ettir"""
+        if download_id not in self.incomplete_downloads:
+            return None
+        
+        incomplete = self.incomplete_downloads[download_id]
+        # Yeni indirme olarak ekle
+        download_info = {
+            'url': incomplete.get('url'),
+            'format': incomplete.get('format', 'video'),
+            'type': 'resume'
+        }
+        new_id = await self.add_to_queue(download_info)
+        
+        # Eski incomplete'den sil
+        del self.incomplete_downloads[download_id]
+        self._save_state()
+        
+        return new_id
+
+
+# Global download queue manager
+download_queue = DownloadQueueManager(max_concurrent=5)
+
+
 # Models
 class CrawlStartRequest(BaseModel):
     target_url: str
@@ -70,6 +292,64 @@ class DirectVideoDownloadRequest(BaseModel):
     url: str
     format: str = "video"  # video or audio
     site: str = "auto"  # auto, youtube, vk, tiktok, etc.
+
+
+# ===== Download Queue Status Endpoint =====
+@api_router.get("/download/queue-status")
+async def get_download_queue_status():
+    """İndirme kuyruğu durumunu getir"""
+    return download_queue.get_status()
+
+
+@api_router.get("/download/progress/{download_id}")
+async def get_download_progress(download_id: str):
+    """Tek bir indirmenin ilerlemesini getir"""
+    progress = download_queue.get_download_progress(download_id)
+    if progress:
+        return {"success": True, "progress": progress}
+    return {"success": False, "message": "İndirme bulunamadı"}
+
+
+@api_router.post("/download/clear-completed")
+async def clear_completed_downloads():
+    """Tamamlanan indirmeleri temizle"""
+    download_queue.clear_completed()
+    return {"success": True}
+
+
+@api_router.post("/download/resume/{download_id}")
+async def resume_incomplete_download(download_id: str, background_tasks: BackgroundTasks):
+    """Yarım kalan indirmeyi devam ettir"""
+    new_id = await download_queue.resume_download(download_id)
+    if new_id:
+        # Arka planda indirmeyi başlat
+        incomplete = download_queue.incomplete_downloads.get(download_id, {})
+        url = incomplete.get('url', '')
+        format_type = incomplete.get('format', 'video')
+        
+        if download_queue.progress_data.get(new_id, {}).get('status') == 'starting':
+            background_tasks.add_task(process_youtube_download, new_id, url, format_type)
+        
+        return {
+            "success": True,
+            "download_id": new_id,
+            "message": "İndirme devam ettiriliyor"
+        }
+    return {"success": False, "message": "Yarım kalan indirme bulunamadı"}
+
+
+@api_router.delete("/download/incomplete/{download_id}")
+async def delete_incomplete_download(download_id: str):
+    """Yarım kalan indirmeyi sil"""
+    download_queue.clear_incomplete(download_id)
+    return {"success": True}
+
+
+@api_router.delete("/download/incomplete")
+async def clear_all_incomplete_downloads():
+    """Tüm yarım kalan indirmeleri temizle"""
+    download_queue.clear_incomplete()
+    return {"success": True}
 
 
 @api_router.post("/download/direct-image")
@@ -136,7 +416,7 @@ class ConnectionManager:
         for conn in self.connections:
             try:
                 await conn.send_json(msg)
-            except:
+            except Exception:
                 pass
 
 manager = ConnectionManager()
@@ -345,77 +625,202 @@ async def download_images(request: DownloadRequest):
 
 
 @api_router.post("/download/youtube")
-async def download_youtube(request: YouTubeDownloadRequest):
-    """YouTube video/ses indir"""
-    downloader = YouTubeDownloader(str(DOWNLOADS_DIR))
+async def download_youtube(request: YouTubeDownloadRequest, background_tasks: BackgroundTasks):
+    """YouTube video/ses indir - Sıra sistemi ile"""
+    # Sıraya ekle
+    download_info = {
+        'url': request.url,
+        'format': request.format,
+        'type': 'youtube'
+    }
+    download_id = await download_queue.add_to_queue(download_info)
+    
+    # Eğer hemen başlayabiliyorsa background task olarak başlat
+    if download_queue.progress_data[download_id]['status'] == 'starting':
+        background_tasks.add_task(process_youtube_download, download_id, request.url, request.format)
+    else:
+        # Sırada bekleyenler için de background task ekle (sırası gelince başlar)
+        background_tasks.add_task(wait_and_process_download, download_id, request.url, request.format)
+    
+    return {
+        "success": True,
+        "download_id": download_id,
+        "status": download_queue.progress_data[download_id]['status'],
+        "queue_position": download_queue.progress_data[download_id].get('queue_position', 0),
+        "message": "İndirme sıraya eklendi" if download_queue.progress_data[download_id]['status'] == 'queued' else "İndirme başlatıldı"
+    }
+
+
+async def wait_and_process_download(download_id: str, url: str, format_type: str):
+    """Sıra bekleyen indirmeler için"""
+    # Sıranın gelmesini bekle
+    while True:
+        progress = download_queue.get_download_progress(download_id)
+        if not progress:
+            return
+        if progress.get('status') in ['starting', 'downloading']:
+            break
+        if progress.get('status') in ['completed', 'failed']:
+            return
+        await asyncio.sleep(1)
+    
+    # İndirmeyi başlat
+    await process_youtube_download(download_id, url, format_type)
+
+
+async def process_youtube_download(download_id: str, url: str, format_type: str):
+    """YouTube indirme işlemi - Progress tracking ile"""
+    await download_queue.start_download(download_id)
+    
+    # Başlangıç durumunu ayarla
+    download_queue.update_progress(download_id, {
+        'percent': 0,
+        'status': 'downloading',
+        'url': url,
+        'title': url,  # Başlangıçta URL, sonra title ile güncellenir
+        'speed': '',
+        'eta': 'Hazırlanıyor...',
+        'downloaded': '',
+        'total': ''
+    })
+    
+    # Thread-safe progress update
+    def progress_hook(d):
+        """yt-dlp progress callback"""
+        try:
+            if d['status'] == 'downloading':
+                percent = 0
+                downloaded_bytes = d.get('downloaded_bytes', 0)
+                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                
+                if total_bytes > 0:
+                    percent = (downloaded_bytes / total_bytes) * 100
+                elif '_percent_str' in d:
+                    try:
+                        percent_str = d['_percent_str'].replace('%', '').strip()
+                        percent = float(percent_str)
+                    except (ValueError, AttributeError):
+                        pass
+                
+                # Speed formatting
+                speed = d.get('_speed_str', d.get('speed', ''))
+                if isinstance(speed, (int, float)) and speed > 0:
+                    if speed > 1024*1024:
+                        speed = f"{speed/1024/1024:.1f}MB/s"
+                    elif speed > 1024:
+                        speed = f"{speed/1024:.1f}KB/s"
+                    else:
+                        speed = f"{speed:.0f}B/s"
+                
+                # Downloaded size formatting
+                downloaded = d.get('_downloaded_bytes_str', '')
+                if not downloaded and downloaded_bytes > 0:
+                    if downloaded_bytes > 1024*1024:
+                        downloaded = f"{downloaded_bytes/1024/1024:.1f}MB"
+                    else:
+                        downloaded = f"{downloaded_bytes/1024:.1f}KB"
+                
+                # Total size formatting
+                total = d.get('_total_bytes_str', d.get('_total_bytes_estimate_str', ''))
+                if not total and total_bytes > 0:
+                    if total_bytes > 1024*1024:
+                        total = f"{total_bytes/1024/1024:.1f}MB"
+                    else:
+                        total = f"{total_bytes/1024:.1f}KB"
+                
+                download_queue.update_progress(download_id, {
+                    'percent': round(percent, 1),
+                    'speed': str(speed) if speed else '',
+                    'eta': d.get('_eta_str', d.get('eta', '')),
+                    'downloaded': downloaded,
+                    'total': total,
+                    'status': 'downloading',
+                    'filename': d.get('filename', '')
+                })
+                logger.info(f"Download progress {download_id}: {percent:.1f}% - {speed}")
+                
+            elif d['status'] == 'finished':
+                download_queue.update_progress(download_id, {
+                    'percent': 99,
+                    'status': 'processing',
+                    'speed': '',
+                    'eta': 'İşleniyor...'
+                })
+        except Exception as e:
+            logger.error(f"Progress hook error: {e}")
+    
+    downloader = YouTubeDownloaderWithProgress(str(DOWNLOADS_DIR), progress_hook)
     
     try:
         # Video bilgisi al
-        info = downloader.get_video_info(request.url)
+        info = downloader.get_video_info(url)
         if not info:
-            return {"success": False, "message": "Video bilgisi alınamadı"}
+            await download_queue.complete_download(download_id, False, {"message": "Video bilgisi alınamadı"})
+            return
         
-        # İndir
-        if request.format == "audio":
-            filepath = downloader.download_audio(request.url)
+        # Title'ı progress'e ekle
+        download_queue.update_progress(download_id, {
+            'percent': 0,
+            'status': 'starting',
+            'title': info.get('title', url)
+        })
+        
+        # Async olarak thread'de çalıştır
+        loop = asyncio.get_event_loop()
+        if format_type == "audio":
+            filepath = await loop.run_in_executor(None, downloader.download_audio, url)
         else:
-            filepath = downloader.download_video(request.url)
+            filepath = await loop.run_in_executor(None, downloader.download_video, url)
         
         if filepath and os.path.exists(filepath):
             filename = os.path.basename(filepath)
-            return {
+            result = {
                 "success": True,
                 "filename": filename,
                 "title": info.get('title', ''),
                 "download_url": f"/api/download/youtube-file/{filename}"
             }
+            await download_queue.complete_download(download_id, True, result)
+            return
         
-        return {"success": False, "message": "İndirme başarısız"}
+        await download_queue.complete_download(download_id, False, {"message": "İndirme başarısız"})
         
     except Exception as e:
         logger.error(f"YouTube download error: {e}")
-        return {"success": False, "message": str(e)}
+        await download_queue.complete_download(download_id, False, {"message": str(e)})
 
 
 @api_router.post("/download/video")
-async def download_any_video(request: DirectVideoDownloadRequest):
-    """Herhangi bir siteden video indir (VK, TikTok, Twitter, vs.)"""
-    downloader = YouTubeDownloader(str(DOWNLOADS_DIR))
+async def download_any_video(request: DirectVideoDownloadRequest, background_tasks: BackgroundTasks):
+    """Herhangi bir siteden video indir (VK, TikTok, Twitter, vs.) - Sıra sistemi ile"""
+    # Sıraya ekle
+    download_info = {
+        'url': request.url,
+        'format': request.format,
+        'type': 'video',
+        'site': request.site
+    }
+    download_id = await download_queue.add_to_queue(download_info)
     
-    try:
-        # Video bilgisi al
-        info = downloader.get_video_info(request.url)
-        if not info:
-            return {"success": False, "message": "Video bilgisi alınamadı. Site desteklenmiyor olabilir."}
-        
-        # İndir
-        if request.format == "audio":
-            filepath = downloader.download_audio(request.url)
-        else:
-            filepath = downloader.download_video(request.url)
-        
-        if filepath and os.path.exists(filepath):
-            filename = os.path.basename(filepath)
-            return {
-                "success": True,
-                "filename": filename,
-                "title": info.get('title', ''),
-                "duration": info.get('duration', 0),
-                "uploader": info.get('uploader', ''),
-                "download_url": f"/api/download/youtube-file/{filename}"
-            }
-        
-        return {"success": False, "message": "İndirme başarısız"}
-        
-    except Exception as e:
-        logger.error(f"Video download error: {e}")
-        return {"success": False, "message": str(e)}
+    # Background task olarak başlat
+    if download_queue.progress_data[download_id]['status'] == 'starting':
+        background_tasks.add_task(process_youtube_download, download_id, request.url, request.format)
+    else:
+        background_tasks.add_task(wait_and_process_download, download_id, request.url, request.format)
+    
+    return {
+        "success": True,
+        "download_id": download_id,
+        "status": download_queue.progress_data[download_id]['status'],
+        "queue_position": download_queue.progress_data[download_id].get('queue_position', 0),
+        "message": "İndirme sıraya eklendi" if download_queue.progress_data[download_id]['status'] == 'queued' else "İndirme başlatıldı"
+    }
 
 
 @api_router.get("/video/info")
 async def get_any_video_info(url: str):
     """Herhangi bir video URL'sinin bilgisini al"""
-    downloader = YouTubeDownloader()
+    downloader = YouTubeDownloaderWithProgress()
     info = downloader.get_video_info(url)
     if info:
         return {"success": True, "info": info}
@@ -441,7 +846,7 @@ async def get_youtube_file(filename: str):
 @api_router.get("/youtube/info")
 async def get_youtube_info(url: str):
     """YouTube video bilgisi al"""
-    downloader = YouTubeDownloader()
+    downloader = YouTubeDownloaderWithProgress()
     info = downloader.get_video_info(url)
     if info:
         return {"success": True, "info": info}
