@@ -15,17 +15,20 @@ Kullanıcı, `www.demart.com.tr` sitesi için kapsamlı bir denetim aracı isted
 - Kişisel kullanım için medya indirmek isteyenler
 
 ## Temel Gereksinimler
-### Tamamlanan
+### Tamamlanan (19 Ocak 2025)
 - [x] Web sitesi tarama (Playwright ile JS destekli)
 - [x] Görsel, video, metin toplama
 - [x] YouTube/VK.com/TikTok video indirme (yt-dlp)
 - [x] Doğrudan URL'den resim/video indirme
 - [x] Docker ile yerel kurulum
-- [x] İndirme ilerleme çubuğu (Progress Bar)
+- [x] İndirme ilerleme çubuğu (Progress Bar) - HER İKİ SEKMEDE
 - [x] Kuyruk sistemi (Maks 5 eşzamanlı indirme)
 - [x] Yarım kalan indirmeler listesi
 - [x] Devam ettirme butonu
 - [x] Sayfa yenilenince aktif indirmeler korunması
+- [x] VK video URL çıkarma düzeltildi (CDN yerine video sayfası URL'si)
+- [x] Videolar sekmesi yeni kart görünümü (thumbnail + butonlar)
+- [x] Docker'a Deno eklendi (yt-dlp için daha iyi YouTube desteği)
 
 ### Bekleyen (Backlog)
 - [ ] AI-destekli görsel analizi (sadece platform versiyonunda)
