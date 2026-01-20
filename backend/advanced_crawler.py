@@ -188,6 +188,23 @@ class AdvancedCrawler:
                     const match = style.match(/url\\(["']?([^"')]+)["']?\\)/);
                     return match ? match[1] : '';
                 };
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    if (el.hidden) return false;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+                        return false;
+                    }
+                    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+                };
+                const isInViewport = (el) => {
+                    if (!el) return false;
+                    const rect = el.getBoundingClientRect();
+                    return rect.bottom > 0 && rect.right > 0 &&
+                        rect.top < (window.innerHeight || document.documentElement.clientHeight) &&
+                        rect.left < (window.innerWidth || document.documentElement.clientWidth);
+                };
+                const shouldIncludeElement = (el) => isVisible(el) && isInViewport(el);
                 
                 // VK video sayfalarında - video kartlarından URL'leri çıkar
                 if (isVkSite) {
@@ -204,6 +221,9 @@ class AdvancedCrawler:
                     
                     vkSelectors.forEach(selector => {
                         document.querySelectorAll(selector).forEach(el => {
+                            if (!shouldIncludeElement(el)) {
+                                return;
+                            }
                             let href = el.href || el.getAttribute('href');
                             const videoId = el.dataset?.videoId;
                             const rawId = el.dataset?.videoRawId;
@@ -247,6 +267,9 @@ class AdvancedCrawler:
                 // CDN video URL'lerini ATLA - bunlar süreli ve çalışmaz
                 // Sadece direkt indirilebilir video dosyalarını al (.mp4 dosyaları)
                 document.querySelectorAll('video').forEach(v => {
+                    if (!shouldIncludeElement(v)) {
+                        return;
+                    }
                     let src = v.src || v.currentSrc;
                     // CDN URL'lerini atla
                     if (src && !src.startsWith('blob:') && !src.includes('okcdn') && !src.includes('vkuservideo')) {
@@ -260,6 +283,9 @@ class AdvancedCrawler:
                 
                 // YouTube iframes
                 document.querySelectorAll('iframe').forEach(iframe => {
+                    if (!shouldIncludeElement(iframe)) {
+                        return;
+                    }
                     const src = iframe.src || iframe.dataset.src;
                     if (src && !seen.has(src)) {
                         if (src.includes('youtube') || src.includes('youtu.be')) {
@@ -280,6 +306,9 @@ class AdvancedCrawler:
                 
                 // YouTube links
                 document.querySelectorAll('a[href*="youtube"], a[href*="youtu.be"]').forEach(a => {
+                    if (!shouldIncludeElement(a)) {
+                        return;
+                    }
                     if (!seen.has(a.href)) {
                         seen.add(a.href);
                         vids.push({ url: a.href, type: 'youtube' });
@@ -288,6 +317,9 @@ class AdvancedCrawler:
                 
                 // VK video links
                 document.querySelectorAll('a[href*="vk.com/video"], a[href*="vkvideo"], a[href*="vkvideo.ru/video"], a[href*="vkvideo.ru/clip"]').forEach(a => {
+                    if (!shouldIncludeElement(a)) {
+                        return;
+                    }
                     if (!seen.has(a.href)) {
                         seen.add(a.href);
                         vids.push({ url: a.href, type: 'vk' });
@@ -296,6 +328,9 @@ class AdvancedCrawler:
                 
                 // Genel video linkleri (.mp4, .webm, .avi, .mov)
                 document.querySelectorAll('a[href$=".mp4"], a[href$=".webm"], a[href$=".avi"], a[href$=".mov"], a[href$=".m3u8"]').forEach(a => {
+                    if (!shouldIncludeElement(a)) {
+                        return;
+                    }
                     if (!seen.has(a.href)) {
                         seen.add(a.href);
                         vids.push({ url: a.href, type: 'video' });
@@ -304,6 +339,9 @@ class AdvancedCrawler:
                 
                 // data-video attributes
                 document.querySelectorAll('[data-video], [data-video-url], [data-video-src]').forEach(el => {
+                    if (!shouldIncludeElement(el)) {
+                        return;
+                    }
                     const src = el.dataset.video || el.dataset.videoUrl || el.dataset.videoSrc;
                     if (src && !src.startsWith('blob:') && !seen.has(src)) {
                         seen.add(src);
@@ -330,28 +368,27 @@ class AdvancedCrawler:
                             page_url=url,
                             downloadable=True
                         ))
-                    elif vid['type'] == 'vk':
-                        vk_url = self.normalize_vk_url(vid['url'])
-                        if not vk_url:
-                            continue
+                elif vid['type'] == 'vk':
+                    vk_url = self.normalize_vk_url(vid['url'])
+                    if not vk_url:
+                        continue
 
-                        # Thumbnail varsa ekle
-                        thumbnail = vid.get('thumbnail', '')
-                        self.videos.append(MediaItem(
-                            url=vk_url,
-                            type='vk',
-                            thumbnail=thumbnail,
-                            page_url=url,
-                            downloadable=True
-                        ))
-
-                    else:
-                        self.videos.append(MediaItem(
-                            url=vid['url'],
-                            type=vid.get('type', 'video'),
-                            page_url=url,
-                            downloadable=True
-                        ))
+                    # Thumbnail varsa ekle
+                    thumbnail = vid.get('thumbnail', '')
+                    self.videos.append(MediaItem(
+                        url=vk_url,
+                        type='vk',
+                        thumbnail=thumbnail,
+                        page_url=url,
+                        downloadable=True
+                    ))
+                else:
+                    self.videos.append(MediaItem(
+                        url=vid['url'],
+                        type=vid.get('type', 'video'),
+                        page_url=url,
+                        downloadable=True
+                    ))
            
             # Metinleri topla
             texts = await page.evaluate(r'''() => {

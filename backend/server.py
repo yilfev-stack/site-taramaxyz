@@ -930,11 +930,7 @@ async def startup():
 
 
 async def resume_pending_downloads():
-    """Yarım kalan ve kuyrukta bekleyen indirmeleri yeniden başlat."""
-    pending_incomplete = list(download_queue.incomplete_downloads.items())
-    for old_id, info in pending_incomplete:
-        await download_queue.resume_download(old_id)
-
+    """Kuyrukta bekleyen indirmeleri yeniden başlat, yarım kalanları listede bırak."""
     await download_queue.prime_queue()
 
     for download_id, info in list(download_queue.active_downloads.items()):
