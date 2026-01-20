@@ -19,7 +19,7 @@ import json
 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/pw-browsers'
 
 # Playwright
-from playwright.async_api import async_playwright, Browser, Page
+from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
 
 # yt-dlp
 import yt_dlp
@@ -60,6 +60,8 @@ class AdvancedCrawler:
         self.target_url = target_url.rstrip('/')
         parsed = urlparse(target_url)
         self.base_domain = parsed.netloc
+        self.base_path = parsed.path.rstrip('/')
+        self.restrict_to_start_page = 'vk.com' in self.base_domain or 'vkvideo.ru' in self.base_domain
         self.max_pages = max_pages
         self.download_dir = download_dir
         
@@ -79,8 +81,15 @@ class AdvancedCrawler:
         os.makedirs(download_dir, exist_ok=True)
 
     def is_internal_url(self, url: str) -> bool:
+        if self.restrict_to_start_page:
+            return url.rstrip('/') == self.target_url
         parsed = urlparse(url)
-        return self.base_domain in parsed.netloc
+        if self.base_domain not in parsed.netloc:
+            return False
+        if not self.base_path:
+            return True
+        candidate_path = parsed.path.rstrip('/')
+        return candidate_path == self.base_path or candidate_path.startswith(f"{self.base_path}/")
 
     def extract_youtube_id(self, url: str) -> Optional[str]:
         """YouTube video ID'sini çıkar"""
@@ -114,6 +123,21 @@ class AdvancedCrawler:
 
         return vk_url
 
+    async def safe_goto(self, page: Page, url: str) -> Optional[str]:
+        """Ağ hatalarına karşı sayfa geçişini birkaç kez dene."""
+        last_error = None
+        for attempt in range(3):
+            try:
+                await page.goto(url, wait_until='domcontentloaded', timeout=45000)
+                return None
+            except PlaywrightTimeoutError as exc:
+                last_error = str(exc)
+            except Exception as exc:
+                last_error = str(exc)
+            logger.warning(f"Navigation failed ({attempt + 1}/3) for {url}: {last_error}")
+            await page.wait_for_timeout(1000)
+        return last_error
+
     async def crawl_page(self, page: Page, url: str) -> None:
         """Tek bir sayfayı Playwright ile tara"""
         if self.should_stop or url in self.visited_urls:
@@ -127,7 +151,15 @@ class AdvancedCrawler:
 
         try:
             # Sayfaya git
-            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            goto_error = await self.safe_goto(page, url)
+            if goto_error:
+                self.issues.append({
+                    'source_url': url,
+                    'issue_type': 'network_error',
+                    'severity': 'High',
+                    'fix_suggestion': goto_error
+                })
+                return
             await page.wait_for_timeout(500)  # JS'in yüklenmesini bekle
             if "vk.com" in url or "vkvideo.ru" in url:
                 await page.wait_for_timeout(1000)
@@ -174,7 +206,8 @@ class AdvancedCrawler:
                     ))
             
             # Videoları topla - Önce sayfa URL'lerini bul (VK, YouTube, vb.)
-            videos = await page.evaluate(r'''() => {
+            async def collect_videos():
+                return await page.evaluate(r'''() => {
                 const vids = [];
                 const seen = new Set();
                 const currentUrl = window.location.href;
@@ -188,6 +221,23 @@ class AdvancedCrawler:
                     const match = style.match(/url\\(["']?([^"')]+)["']?\\)/);
                     return match ? match[1] : '';
                 };
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    if (el.hidden) return false;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+                        return false;
+                    }
+                    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+                };
+                const isInViewport = (el) => {
+                    if (!el) return false;
+                    const rect = el.getBoundingClientRect();
+                    return rect.bottom > 0 && rect.right > 0 &&
+                        rect.top < (window.innerHeight || document.documentElement.clientHeight) &&
+                        rect.left < (window.innerWidth || document.documentElement.clientWidth);
+                };
+                const shouldIncludeElement = (el) => isVisible(el) && isInViewport(el);
                 
                 // VK video sayfalarında - video kartlarından URL'leri çıkar
                 if (isVkSite) {
@@ -204,6 +254,9 @@ class AdvancedCrawler:
                     
                     vkSelectors.forEach(selector => {
                         document.querySelectorAll(selector).forEach(el => {
+                            if (!shouldIncludeElement(el)) {
+                                return;
+                            }
                             let href = el.href || el.getAttribute('href');
                             const videoId = el.dataset?.videoId;
                             const rawId = el.dataset?.videoRawId;
@@ -247,6 +300,9 @@ class AdvancedCrawler:
                 // CDN video URL'lerini ATLA - bunlar süreli ve çalışmaz
                 // Sadece direkt indirilebilir video dosyalarını al (.mp4 dosyaları)
                 document.querySelectorAll('video').forEach(v => {
+                    if (!shouldIncludeElement(v)) {
+                        return;
+                    }
                     let src = v.src || v.currentSrc;
                     // CDN URL'lerini atla
                     if (src && !src.startsWith('blob:') && !src.includes('okcdn') && !src.includes('vkuservideo')) {
@@ -260,6 +316,9 @@ class AdvancedCrawler:
                 
                 // YouTube iframes
                 document.querySelectorAll('iframe').forEach(iframe => {
+                    if (!shouldIncludeElement(iframe)) {
+                        return;
+                    }
                     const src = iframe.src || iframe.dataset.src;
                     if (src && !seen.has(src)) {
                         if (src.includes('youtube') || src.includes('youtu.be')) {
@@ -280,6 +339,9 @@ class AdvancedCrawler:
                 
                 // YouTube links
                 document.querySelectorAll('a[href*="youtube"], a[href*="youtu.be"]').forEach(a => {
+                    if (!shouldIncludeElement(a)) {
+                        return;
+                    }
                     if (!seen.has(a.href)) {
                         seen.add(a.href);
                         vids.push({ url: a.href, type: 'youtube' });
@@ -288,6 +350,9 @@ class AdvancedCrawler:
                 
                 // VK video links
                 document.querySelectorAll('a[href*="vk.com/video"], a[href*="vkvideo"], a[href*="vkvideo.ru/video"], a[href*="vkvideo.ru/clip"]').forEach(a => {
+                    if (!shouldIncludeElement(a)) {
+                        return;
+                    }
                     if (!seen.has(a.href)) {
                         seen.add(a.href);
                         vids.push({ url: a.href, type: 'vk' });
@@ -296,6 +361,9 @@ class AdvancedCrawler:
                 
                 // Genel video linkleri (.mp4, .webm, .avi, .mov)
                 document.querySelectorAll('a[href$=".mp4"], a[href$=".webm"], a[href$=".avi"], a[href$=".mov"], a[href$=".m3u8"]').forEach(a => {
+                    if (!shouldIncludeElement(a)) {
+                        return;
+                    }
                     if (!seen.has(a.href)) {
                         seen.add(a.href);
                         vids.push({ url: a.href, type: 'video' });
@@ -304,6 +372,9 @@ class AdvancedCrawler:
                 
                 // data-video attributes
                 document.querySelectorAll('[data-video], [data-video-url], [data-video-src]').forEach(el => {
+                    if (!shouldIncludeElement(el)) {
+                        return;
+                    }
                     const src = el.dataset.video || el.dataset.videoUrl || el.dataset.videoSrc;
                     if (src && !src.startsWith('blob:') && !seen.has(src)) {
                         seen.add(src);
@@ -313,6 +384,31 @@ class AdvancedCrawler:
                 
                 return vids;
             }''')
+
+            videos = []
+            seen_video_urls = set()
+            is_vk_page = "vk.com" in url or "vkvideo.ru" in url
+            scroll_steps = 30 if is_vk_page else 1
+            stable_rounds = 0
+            for _ in range(scroll_steps):
+                before_count = len(seen_video_urls)
+                batch = await collect_videos()
+                for item in batch:
+                    item_url = item.get('url')
+                    if item_url and item_url not in seen_video_urls:
+                        seen_video_urls.add(item_url)
+                        videos.append(item)
+                if not is_vk_page:
+                    break
+                if len(seen_video_urls) == before_count:
+                    stable_rounds += 1
+                else:
+                    stable_rounds = 0
+                if stable_rounds >= 2:
+                    break
+                await page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.9));")
+                await page.wait_for_timeout(800)
+            await page.evaluate("window.scrollTo(0, 0);")
             
             for vid in videos:
                 # Blob URL'leri atla
@@ -330,28 +426,27 @@ class AdvancedCrawler:
                             page_url=url,
                             downloadable=True
                         ))
-                    elif vid['type'] == 'vk':
-                        vk_url = self.normalize_vk_url(vid['url'])
-                        if not vk_url:
-                            continue
+                elif vid['type'] == 'vk':
+                    vk_url = self.normalize_vk_url(vid['url'])
+                    if not vk_url:
+                        continue
 
-                        # Thumbnail varsa ekle
-                        thumbnail = vid.get('thumbnail', '')
-                        self.videos.append(MediaItem(
-                            url=vk_url,
-                            type='vk',
-                            thumbnail=thumbnail,
-                            page_url=url,
-                            downloadable=True
-                        ))
-
-                    else:
-                        self.videos.append(MediaItem(
-                            url=vid['url'],
-                            type=vid.get('type', 'video'),
-                            page_url=url,
-                            downloadable=True
-                        ))
+                    # Thumbnail varsa ekle
+                    thumbnail = vid.get('thumbnail', '')
+                    self.videos.append(MediaItem(
+                        url=vk_url,
+                        type='vk',
+                        thumbnail=thumbnail,
+                        page_url=url,
+                        downloadable=True
+                    ))
+                else:
+                    self.videos.append(MediaItem(
+                        url=vid['url'],
+                        type=vid.get('type', 'video'),
+                        page_url=url,
+                        downloadable=True
+                    ))
            
             # Metinleri topla
             texts = await page.evaluate(r'''() => {
@@ -412,7 +507,8 @@ class AdvancedCrawler:
             self.browser = await p.chromium.launch(headless=True)
             context = await self.browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                ignore_https_errors=True
             )
             page = await context.new_page()
             
