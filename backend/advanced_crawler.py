@@ -382,10 +382,7 @@ class AdvancedCrawler:
                     }
                 });
                 
-                return vids;
-            }''')
-
-            videos = []
+              videos = []
             seen_video_urls = set()
             is_vk_page = "vk.com" in url or "vkvideo.ru" in url
             scroll_steps = 30 if is_vk_page else 1
@@ -414,6 +411,7 @@ class AdvancedCrawler:
                 # Blob URL'leri atla
                 if vid['url'].startswith('blob:'):
                     continue
+
                     
                 if vid['type'] == 'youtube':
                     yt_id = self.extract_youtube_id(vid['url'])
