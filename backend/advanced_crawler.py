@@ -183,7 +183,8 @@ class AdvancedCrawler:
                     ))
             
             # Videoları topla - Önce sayfa URL'lerini bul (VK, YouTube, vb.)
-            videos = await page.evaluate(r'''() => {
+            async def collect_videos():
+                return await page.evaluate(r'''() => {
                 const vids = [];
                 const seen = new Set();
                 const currentUrl = window.location.href;
@@ -360,6 +361,15 @@ class AdvancedCrawler:
                 
                 return vids;
             }''')
+
+            videos = []
+            scroll_steps = 6 if "vk.com" in url or "vkvideo.ru" in url else 1
+            for _ in range(scroll_steps):
+                videos.extend(await collect_videos())
+                if scroll_steps > 1:
+                    await page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.9));")
+                    await page.wait_for_timeout(600)
+            await page.evaluate("window.scrollTo(0, 0);")
             
             for vid in videos:
                 # Blob URL'leri atla
