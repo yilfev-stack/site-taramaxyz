@@ -60,6 +60,8 @@ class AdvancedCrawler:
         self.target_url = target_url.rstrip('/')
         parsed = urlparse(target_url)
         self.base_domain = parsed.netloc
+        self.base_path = parsed.path.rstrip('/')
+        self.restrict_to_start_page = 'vk.com' in self.base_domain or 'vkvideo.ru' in self.base_domain
         self.max_pages = max_pages
         self.download_dir = download_dir
         
@@ -79,8 +81,15 @@ class AdvancedCrawler:
         os.makedirs(download_dir, exist_ok=True)
 
     def is_internal_url(self, url: str) -> bool:
+        if self.restrict_to_start_page:
+            return url.rstrip('/') == self.target_url
         parsed = urlparse(url)
-        return self.base_domain in parsed.netloc
+        if self.base_domain not in parsed.netloc:
+            return False
+        if not self.base_path:
+            return True
+        candidate_path = parsed.path.rstrip('/')
+        return candidate_path == self.base_path or candidate_path.startswith(f"{self.base_path}/")
 
     def extract_youtube_id(self, url: str) -> Optional[str]:
         """YouTube video ID'sini çıkar"""
