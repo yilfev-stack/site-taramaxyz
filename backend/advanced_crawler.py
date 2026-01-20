@@ -362,7 +362,7 @@ class AdvancedCrawler:
                 return vids;
             }''')
 
-            videos = []
+             videos = []
             seen_video_urls = set()
             is_vk_page = "vk.com" in url or "vkvideo.ru" in url
             scroll_steps = 30 if is_vk_page else 1
@@ -386,7 +386,6 @@ class AdvancedCrawler:
                 await page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.9));")
                 await page.wait_for_timeout(800)
             await page.evaluate("window.scrollTo(0, 0);")
-            
             for vid in videos:
                 # Blob URL'leri atla
                 if vid['url'].startswith('blob:'):
