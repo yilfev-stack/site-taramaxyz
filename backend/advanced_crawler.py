@@ -362,15 +362,30 @@ class AdvancedCrawler:
                 return vids;
             }''')
 
-            videos = []
-            scroll_steps = 6 if "vk.com" in url or "vkvideo.ru" in url else 1
+             videos = []
+            seen_video_urls = set()
+            is_vk_page = "vk.com" in url or "vkvideo.ru" in url
+            scroll_steps = 30 if is_vk_page else 1
+            stable_rounds = 0
             for _ in range(scroll_steps):
-                videos.extend(await collect_videos())
-                if scroll_steps > 1:
-                    await page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.9));")
-                    await page.wait_for_timeout(600)
+                before_count = len(seen_video_urls)
+                batch = await collect_videos()
+                for item in batch:
+                    item_url = item.get('url')
+                    if item_url and item_url not in seen_video_urls:
+                        seen_video_urls.add(item_url)
+                        videos.append(item)
+                if not is_vk_page:
+                    break
+                if len(seen_video_urls) == before_count:
+                    stable_rounds += 1
+                else:
+                    stable_rounds = 0
+                if stable_rounds >= 2:
+                    break
+                await page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.9));")
+                await page.wait_for_timeout(800)
             await page.evaluate("window.scrollTo(0, 0);")
-            
             for vid in videos:
                 # Blob URL'leri atla
                 if vid['url'].startswith('blob:'):
