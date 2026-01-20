@@ -19,7 +19,7 @@ import json
 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/pw-browsers'
 
 # Playwright
-from playwright.async_api import async_playwright, Browser, Page
+from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeoutError
 
 # yt-dlp
 import yt_dlp
@@ -123,6 +123,21 @@ class AdvancedCrawler:
 
         return vk_url
 
+    async def safe_goto(self, page: Page, url: str) -> Optional[str]:
+        """Ağ hatalarına karşı sayfa geçişini birkaç kez dene."""
+        last_error = None
+        for attempt in range(3):
+            try:
+                await page.goto(url, wait_until='domcontentloaded', timeout=45000)
+                return None
+            except PlaywrightTimeoutError as exc:
+                last_error = str(exc)
+            except Exception as exc:
+                last_error = str(exc)
+            logger.warning(f"Navigation failed ({attempt + 1}/3) for {url}: {last_error}")
+            await page.wait_for_timeout(1000)
+        return last_error
+
     async def crawl_page(self, page: Page, url: str) -> None:
         """Tek bir sayfayı Playwright ile tara"""
         if self.should_stop or url in self.visited_urls:
@@ -136,7 +151,15 @@ class AdvancedCrawler:
 
         try:
             # Sayfaya git
-            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            goto_error = await self.safe_goto(page, url)
+            if goto_error:
+                self.issues.append({
+                    'source_url': url,
+                    'issue_type': 'network_error',
+                    'severity': 'High',
+                    'fix_suggestion': goto_error
+                })
+                return
             await page.wait_for_timeout(500)  # JS'in yüklenmesini bekle
             if "vk.com" in url or "vkvideo.ru" in url:
                 await page.wait_for_timeout(1000)
@@ -359,10 +382,7 @@ class AdvancedCrawler:
                     }
                 });
                 
-                return vids;
-            }''')
-
-             videos = []
+              videos = []
             seen_video_urls = set()
             is_vk_page = "vk.com" in url or "vkvideo.ru" in url
             scroll_steps = 30 if is_vk_page else 1
@@ -386,10 +406,12 @@ class AdvancedCrawler:
                 await page.evaluate("window.scrollBy(0, Math.floor(window.innerHeight * 0.9));")
                 await page.wait_for_timeout(800)
             await page.evaluate("window.scrollTo(0, 0);")
+            
             for vid in videos:
                 # Blob URL'leri atla
                 if vid['url'].startswith('blob:'):
                     continue
+
                     
                 if vid['type'] == 'youtube':
                     yt_id = self.extract_youtube_id(vid['url'])
@@ -483,7 +505,8 @@ class AdvancedCrawler:
             self.browser = await p.chromium.launch(headless=True)
             context = await self.browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                ignore_https_errors=True
             )
             page = await context.new_page()
             
